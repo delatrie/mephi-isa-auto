@@ -14,4 +14,5 @@ Export-ModuleMember -Function @(
     'Remove-PersonalToken'
     'Get-Course'
     'Get-CourseRun'
+    'Get-Group'
 )

@@ -11,6 +11,14 @@ $SemestersSubPattern = ($Semesters | ForEach-Object {
 }) -join '|'
 [System.Text.RegularExpressions.Regex] $CourseRunNamePattern = "^(?<year>\d{4})-(?<half>$SemestersSubPattern)$"
 
+
+[System.String[]] $Degrees = @{
+    M = 'Magister'
+    М = 'Magister'
+    B = ''
+}
+[System.Text.RegularExpressions.Regex] $GroupNamePattern = "^(?<level>\w)(?<year>\d\d)-(?<number>\d+)$"
+
 Function Get-Course
 {
     [CmdletBinding(DefaultParameterSetName = 'Name')]
@@ -177,9 +185,55 @@ Function Get-CourseRun
                 } | Sort-Object Year, { $Semesters.IndexOf($_.Semester) }
         }
     }
+}
 
-    End
+Function Get-Group
+{
+    [CmdletBinding(DefaultParameterSetName = 'All')]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A course run',
+            ValueFromPipeline = $True
+        )]
+        [ValidateNotNull()]
+        [System.Object[]] $CourseRun,
+
+        [Parameter(
+            HelpMessage = 'A name of the group',
+            ParameterSetName = 'Single'
+        )]
+        [ValidateNotNullOrEmpty()]
+        [System.String] $Name = $Null
+    )
+
+    Process
     {
+        ForEach ($CurrentCourseRun in $CourseRun)
+        {
+            $CurrentCourseRunId = $CurrentCourseRun.Id
+            Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/subgroups" |
+                Where-Object {
+                    $_.name -match $GroupNamePattern
+                } | ForEach-Object {
+                    $Match = $GroupNamePattern.Match($_.name)
 
+                    [System.Char] $Level = $Match.Groups['level'].Value[0]
+                    [System.Int32] $YearShort = $Match.Groups['year'].Value
+                    $Year = 2000 + $YearShort
+                    [System.Int32] $Number = $Match.Groups['number'].Value
+
+                    [PSCustomObject]@{
+                        Id = $_.Id
+                        FullName = $_.name
+                        Degree = $Level
+                        Year = $Year
+                        Number = $Number
+                        Description = $_.description
+                    }
+                } | Where-Object {
+                    $PSCmdlet.ParameterSetName -eq 'All' -or $_.FullName -eq $Name
+                }
+        }
     }
 }
