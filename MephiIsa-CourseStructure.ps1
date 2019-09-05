@@ -11,13 +11,13 @@ $SemestersSubPattern = ($Semesters | ForEach-Object {
 }) -join '|'
 [System.Text.RegularExpressions.Regex] $CourseRunNamePattern = "^(?<year>\d{4})-(?<half>$SemestersSubPattern)$"
 
-
-[System.String[]] $Degrees = @{
-    M = 'Magister'
-    М = 'Magister'
-    B = ''
+$Degrees = @{
+    'M' = 'Master'
 }
-[System.Text.RegularExpressions.Regex] $GroupNamePattern = "^(?<level>\w)(?<year>\d\d)-(?<number>\d+)$"
+$DegreePattern = ($Degrees.Keys | ForEach-Object {
+    [System.Text.RegularExpressions.Regex]::Escape($_)
+}) -join '|'
+[System.Text.RegularExpressions.Regex] $GroupNamePattern = "^(?<level>$DegreePattern)(?<year>\d\d)-(?<number>\d+)$"
 
 Function Get-Course
 {
@@ -218,7 +218,7 @@ Function Get-Group
                 } | ForEach-Object {
                     $Match = $GroupNamePattern.Match($_.name)
 
-                    [System.Char] $Level = $Match.Groups['level'].Value[0]
+                    $Level = $Match.Groups['level'].Value
                     [System.Int32] $YearShort = $Match.Groups['year'].Value
                     $Year = 2000 + $YearShort
                     [System.Int32] $Number = $Match.Groups['number'].Value
@@ -226,7 +226,7 @@ Function Get-Group
                     [PSCustomObject]@{
                         Id = $_.Id
                         FullName = $_.name
-                        Degree = $Level
+                        Degree = $Degrees[$Level]
                         Year = $Year
                         Number = $Number
                         Description = $_.description
