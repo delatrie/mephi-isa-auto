@@ -8,6 +8,7 @@ Set-Variable -Scope 'Script' -Name 'Constants' -Value ([PSCustomObject]@{
     Resources = [PSCustomObject]@{
         Group = 'groups'
         Me = 'user'
+        User = 'users'
     }
 })
 
@@ -129,7 +130,7 @@ Function Invoke-RemoteApi
         [Parameter(
             HelpMessage = 'A REST method to execute against the resource'
         )]
-        [ValidateSet('GET', 'POST')]
+        [ValidateSet('GET', 'PUT', 'POST', 'DELETE')]
         $Method = 'GET',
 
         [Parameter(
