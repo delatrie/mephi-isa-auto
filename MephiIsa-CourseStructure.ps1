@@ -11,7 +11,7 @@ $SemestersSubPattern = ($Semesters | ForEach-Object {
 }) -join '|'
 [System.Text.RegularExpressions.Regex] $CourseRunNamePattern = "^(?<year>\d{4})-(?<half>$SemestersSubPattern)$"
 
-$Degrees = @{
+$Degrees = [ordered] @{
     'M' = 'Master'
 }
 $DegreePattern = ($Degrees.Keys | ForEach-Object {
@@ -204,8 +204,59 @@ Function Get-Group
             ParameterSetName = 'Single'
         )]
         [ValidateNotNullOrEmpty()]
-        [System.String] $Name = $Null
+        [System.String] $Name = $Null,
+
+        [Parameter(
+            HelpMessage = 'A year of matriculation',
+            ParameterSetName = 'Query'
+        )]
+        [System.Int32] $Year,
+
+        [Parameter(
+            HelpMessage = 'A number of the group',
+            ParameterSetName = 'Query'
+        )]
+        [System.Int32] $Number
     )
+
+    DynamicParam
+    {
+        $DynamicParameterName = 'Degree'
+
+        $Attributes = [System.Management.Automation.ParameterAttribute]::new()
+        $Attributes.Mandatory = $False
+        $Attributes.HelpMessage = 'A degree'
+        $Attributes.ParameterSetName = 'Query'
+
+        $AttributeCollection = [System.Collections.ObjectModel.Collection[System.Attribute]]::new()
+        $AttributeCollection.Add($Attributes)
+
+        $ValidateSetAttribute = [System.Management.Automation.ValidateSetAttribute]::new($Degrees.Values)
+        $AttributeCollection.Add($ValidateSetAttribute)
+
+        $Parameter = [System.Management.Automation.RuntimeDefinedParameter]::new(
+            $DynamicParameterName,
+            [System.String],
+            $AttributeCollection
+        )
+
+        $ParametersDictionary = [System.Management.Automation.RuntimeDefinedParameterDictionary]::new()
+        $ParametersDictionary.Add($DynamicParameterName, $Parameter)
+
+        Return $ParametersDictionary
+    }
+
+    Begin
+    {
+        $HasDegree = $PSBoundParameters.ContainsKey('Degree')
+        $HasYear = $PSBoundParameters.ContainsKey('Year')
+        $HasNumber = $PSBoundParameters.ContainsKey('Number')
+
+        If ($HasDegree)
+        {
+            $Degree = $PSBoundParameters.Degree
+        }
+    }
 
     Process
     {
@@ -218,21 +269,27 @@ Function Get-Group
                 } | ForEach-Object {
                     $Match = $GroupNamePattern.Match($_.name)
 
-                    $Level = $Match.Groups['level'].Value
-                    [System.Int32] $YearShort = $Match.Groups['year'].Value
-                    $Year = 2000 + $YearShort
-                    [System.Int32] $Number = $Match.Groups['number'].Value
+                    $CurrentGroupDegreeKey = $Match.Groups['level'].Value
+                    [System.Int32] $CurrentGroupYearShort = $Match.Groups['year'].Value
+                    $CurrentGroupYear = 2000 + $CurrentGroupYearShort
+                    [System.Int32] $CurrentGroupNumber = $Match.Groups['number'].Value
 
                     [PSCustomObject]@{
                         Id = $_.Id
                         FullName = $_.name
-                        Degree = $Degrees[$Level]
-                        Year = $Year
-                        Number = $Number
+                        Degree = $Degrees[$CurrentGroupDegreeKey]
+                        Year = $CurrentGroupYear
+                        Number = $CurrentGroupNumber
                         Description = $_.description
                     }
                 } | Where-Object {
-                    $PSCmdlet.ParameterSetName -eq 'All' -or $_.FullName -eq $Name
+                    $Group = $_
+                    Switch($PSCmdlet.ParameterSetName)
+                    {
+                        'All' { $True }
+                        'Single' { $Group.FullName -eq $Name }
+                        'Query' { (-not $HasDegree -or $Group.Degree -eq $Degree ) -and (-not $HasYear -or $Group.Year -eq $Year) -and (-not $HasNumber -or $Group.Number -eq $Number) }
+                    }
                 }
         }
     }

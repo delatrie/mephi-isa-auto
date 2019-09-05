@@ -144,6 +144,7 @@ Function Invoke-RemoteApi
 
     Try
     {
+        $ContentFile = [System.IO.Path]::GetTempFileName()
         $Query = ($Attributes.Keys | ForEach-Object {
             "$([System.Net.WebUtility]::UrlEncode($_))=$([System.Net.WebUtility]::UrlEncode($Attributes[$_]))"
         }) -join '&'
@@ -154,10 +155,15 @@ Function Invoke-RemoteApi
         $PlainToken = [System.Management.Automation.PSCredential]::new('unused', $Token).GetNetworkCredential().Password
 
         $Headers = @{
-            Authorization = "Bearer $PlainToken"
+            'Accept'         = 'application/json'
+            'Accept-Charset' = 'utf-8'
+            'Authorization'  = "Bearer $PlainToken"
+            'Content-Type'   = 'application/json; charset=utf-8'
         }
 
-        $Result = Invoke-RestMethod -Method $Method -Uri $Url -Headers $Headers
+        Invoke-WebRequest -Method $Method -Uri $Url -Headers $Headers -OutFile $ContentFile
+
+        $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
         If ($Result -is [System.Array])
         {
             For ($i = 0; $i -lt $Result.Length; $i++)
@@ -172,6 +178,10 @@ Function Invoke-RemoteApi
     }
     Finally
     {
+        If (Test-Path -PathType Leaf $ContentFile)
+        {
+            Remove-Item $ContentFile
+        }
         [System.Net.ServicePointManager]::SecurityProtocol = $OriginalSecurityProtocol
     }
 }
