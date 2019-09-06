@@ -1,14 +1,21 @@
 Set-Variable -Scope 'Script' -Name 'Constants' -Value ([PSCustomObject]@{
-    BaseUrl = 'https://gitlab.com'
-    ApiPath = '/api'
-    ApiVersion = 'v4'
-    AppName = 'MephiIsaAutomation'
-    PatFileName = '.pat'
+    BaseUrl           = 'https://gitlab.com'
+    ApiPath           = '/api'
+    ApiVersion        = 'v4'
+    AppName           = 'MephiIsaAutomation'
+    PatFileName       = '.pat'
     CourseGroupPrefix = 'mephi.'
-    Resources = [PSCustomObject]@{
+    Resources         = [PSCustomObject]@{
         Group = 'groups'
-        Me = 'user'
-        User = 'users'
+        Me    = 'user'
+        User  = 'users'
+    }
+    AccessLevels      = [PSCustomObject]@{
+        Guest      = 10
+        Reported   = 20
+        Developer  = 30
+        Maintainer = 40
+        Owner      = 50
     }
 })
 
@@ -112,9 +119,18 @@ Function Get-PersonalTokenPath
 
 Function Invoke-RemoteApi
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Get')]
     Param
     (
+        [Parameter(ParameterSetName = 'Get')]
+        [Switch] $Get,
+        [Parameter(ParameterSetName = 'Post')]
+        [Switch] $Post,
+        [Parameter(ParameterSetName = 'Put')]
+        [Switch] $Put,
+        [Parameter(ParameterSetName = 'Delete')]
+        [Switch] $Delete,
+
         [Parameter(
             Mandatory = $True,
             HelpMessage = 'A resource of interest'
@@ -128,16 +144,17 @@ Function Invoke-RemoteApi
         [System.String] $SubPath = '',
 
         [Parameter(
-            HelpMessage = 'A REST method to execute against the resource'
-        )]
-        [ValidateSet('GET', 'PUT', 'POST', 'DELETE')]
-        $Method = 'GET',
-
-        [Parameter(
             HelpMessage = 'An attributes of the query'
         )]
         [ValidateNotNull()]
-        [System.Collections.Hashtable] $Attributes = @{}
+        [System.Collections.Hashtable] $Attributes = @{},
+
+        [Parameter(
+            HelpMessage = 'A body of the request',
+            ParameterSetName = 'Post'
+        )]
+        [ValidateNotNull()]
+        [System.Collections.Hashtable] $Body = @{}
     )
 
     $OriginalSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
@@ -155,14 +172,24 @@ Function Invoke-RemoteApi
 
         $PlainToken = [System.Management.Automation.PSCredential]::new('unused', $Token).GetNetworkCredential().Password
 
-        $Headers = @{
-            'Accept'         = 'application/json'
-            'Accept-Charset' = 'utf-8'
-            'Authorization'  = "Bearer $PlainToken"
-            'Content-Type'   = 'application/json; charset=utf-8'
+        $InvokeWebRequestParams = @{
+            Method  = $PSCmdlet.ParameterSetName
+            Headers = @{
+                'Accept'         = 'application/json'
+                'Accept-Charset' = 'utf-8'
+                'Authorization'  = "Bearer $PlainToken"
+                'Content-Type'   = 'application/json; charset=utf-8'
+            }
+            Uri     = $Url
+            OutFile = $ContentFile
         }
 
-        Invoke-WebRequest -Method $Method -Uri $Url -Headers $Headers -OutFile $ContentFile
+        If ($Post)
+        {
+            $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
+        }
+
+        Invoke-WebRequest @InvokeWebRequestParams
 
         $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
         If ($Result -is [System.Array])

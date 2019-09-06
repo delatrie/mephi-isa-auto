@@ -6,42 +6,42 @@ Function Get-Student
     Param
     (
         [Parameter(
-            HelpMessage = 'A group',
-            Mandatory = $True,
+            HelpMessage       = 'A group',
+            Mandatory         = $True,
             ValueFromPipeline = $True
         )]
         [System.Object[]] $Group,
 
         [Parameter(
-            HelpMessage = 'Include students with pending access request',
+            HelpMessage      = 'Include students with pending access request',
             ParameterSetName = 'All'
         )]
         [Switch] $Pending,
 
         [Parameter(
-            HelpMessage = 'Include students with approved access request',
+            HelpMessage      = 'Include students with approved access request',
             ParameterSetName = 'All'
         )]
         [Switch] $Granted,
 
         [Parameter(
-            HelpMessage = 'An id of the student',
-            Mandatory = $True,
+            HelpMessage      = 'An id of the student',
+            Mandatory        = $True,
             ParameterSetName = 'Id'
         )]
         [System.Int32] $Id,
 
         [Parameter(
-            HelpMessage = 'A username of the student',
-            Mandatory = $True,
+            HelpMessage      = 'A username of the student',
+            Mandatory        = $True,
             ParameterSetName = 'UserName'
         )]
         [ValidateNotNullOrEmpty()]
         [System.String] $UserName,
 
         [Parameter(
-            HelpMessage = 'A name of the student',
-            Mandatory = $True,
+            HelpMessage      = 'A name of the student',
+            Mandatory        = $True,
             ParameterSetName = 'NameQuery'
         )]
         [ValidateNotNullOrEmpty()]
@@ -61,14 +61,14 @@ Function Get-Student
             $GroupUsers = @(Try {
                 Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath $GroupMembersUrl |
                     Where-Object {
-                        $_.access_level -eq 30
+                        $_.access_level -eq $Constants.AccessLevels.Developer
                     } | ForEach-Object {
                         [PSCustomObject]@{
-                            Id = $_.id
+                            Id       = $_.id
                             UserName = $_.username
-                            Name = $_.Name
-                            Access = 'Granted'
-                            Email = $Null
+                            Name     = $_.Name
+                            Access   = 'Granted'
+                            Email    = $Null
                         }
                     }
             } Catch {
@@ -80,11 +80,11 @@ Function Get-Student
             $GroupAccessRequests = @(Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentGroupId/access_requests" |
                 ForEach-Object {
                     [PSCustomObject]@{
-                        Id = $_.id
+                        Id       = $_.id
                         UserName = $_.username
-                        Name = $_.Name
-                        Access = 'Pending'
-                        Email = $Null
+                        Name     = $_.Name
+                        Access   = 'Pending'
+                        Email    = $Null
                     }
                 })
 
@@ -99,8 +99,8 @@ Function Get-Student
                 }
             } | ForEach-Object {
                 $StudentId = $_.Id
-                $UserInfo = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$StudentId"
-                $_.Email = $UserInfo.public_email
+                $UserInfo  = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$StudentId"
+                $_.Email   = $UserInfo.public_email
                 $_
             }
         }
@@ -109,63 +109,203 @@ Function Get-Student
 
 Function Grant-StudentAccess
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'UserName')]
     Param
     (
         [Parameter(
             HelpMessage = 'A run of a course',
-            Mandatory = $True
+            Mandatory   = $True
         )]
         [System.Object] $CourseRun,
 
         [Parameter(
             HelpMessage = 'A group, the student reqeust access to',
-            Mandatory = $True
+            Mandatory   = $True
         )]
         [System.Object] $Group,
 
         [Parameter(
-            HelpMessage = 'A user to grant the access',
-            Mandatory = $True,
-            ValueFromPipeline = $True
+            HelpMessage       = 'A user to grant the access',
+            Mandatory         = $True,
+            ValueFromPipeline = $True,
+            ParameterSetName  = 'Instance'
         )]
-        [System.Object[]] $Student
+        [System.Object[]] $Student,
+
+        [Parameter(
+            HelpMessage       = 'An id of the user to grant the access',
+            Mandatory         = $True,
+            ValueFromPipeline = $True,
+            ParameterSetName  = 'Id'
+        )]
+        [System.Int32[]] $StudentId,
+
+        [Parameter(
+            HelpMessage                     = 'A username of the user to grant the access',
+            Mandatory                       = $True,
+            ValueFromPipeline               = $True,
+            ValueFromPipelineByPropertyName = $True,
+            ParameterSetName                = 'UserName'
+        )]
+        [System.String[]] $UserName
     )
 
     Begin
     {
         $GroupId = $Group.Id
-        $ExpirationDate = Switch ($CourseRun.Semester) {
-            'Spring' { "$($CourseRun.Year)-08-31" }
-            'Autumn' { "$($CourseRun.Year + 1)-02-10" }
-            Default  { Throw "Unknown semester '$_'" }
-        }
+        $ExpirationDate = Get-ExpirationDate -CourseRun $CourseRun
     }
 
     Process
     {
-        ForEach ($CurrentStudent in $Student)
+        $Collection = Switch($PSCmdlet.ParameterSetName)
         {
-            $StudentId = $CurrentStudent.Id
-            $Result = Invoke-RemoteApi -Method PUT -Resource $Constants.Resources.Group -SubPath "/$GroupId/access_requests/$StudentId/approve"
-            If (-not $Result -or $Result.access_level -ne 30)
+            'Id'       { $StudentId }
+            'Instance' { $Student   }
+            'UserName' { $UserName  }
+        }
+
+        ForEach ($Item in $Collection)
+        {
+            $CurrentStudentId = Switch ($PSCmdlet.ParameterSetName)
             {
-                Throw "Cannot approve access request of $StudentId to $GroupId"
+                'Id'       { $Item }
+                'Instance' { $Item.Id }
+                'UserName' { Get-StudentId -UserName $Item }
             }
-            $Result = Invoke-RemoteApi -Method PUT -Resource $Constants.Resources.Group -SubPath "/$GroupId/members/$StudentId" -Attributes @{
-                'access_level' = 30
-                'expires_at'   = $ExpirationDate
-            }
-            If (-not $Result -or (Get-Date -Date $Result.expires_at).ToString('yyyy-MM-dd') -ne $ExpirationDate)
+            If ($Null -ne $CurrentStudentId)
             {
-                Throw "Cannot set up expiration datetime of member $StudentId in $GroupId"
+                $CurrentStudent = $Group | Get-Student -Id $CurrentStudentId
+                If ($Null -eq $CurrentStudent)
+                {
+                    Write-Verbose "Granting the student with id #$CurrentStudentId the access to the group $($Group.FullName)..."
+                    $Result = Invoke-RemoteApi -Post -Resource $Constants.Resources.Group -SubPath "/$GroupId/members" -Body @{
+                        'user_id'      = $CurrentStudentId
+                        'access_level' = $Constants.AccessLevels.Developer
+                        'expires_at'   = $ExpirationDate.ToString('yyyy-MM-dd')
+                    }
+                    If (-not $Result -or $Result.access_level -ne $Constants.AccessLevels.Developer)
+                    {
+                        Throw "Cannot grant student #$CurrentStudentId the access to group #$GroupId"
+                    }
+                    $Group | Get-Student -Id $CurrentStudentId
+                }
+                ElseIf ($CurrentStudent.Access -eq 'Granted')
+                {
+                    Write-Verbose "$($CurrentStudent.Name) ($($CurrentStudent.UserName)) already has the access to the group $($Group.FullName)"
+                    Write-Output $CurrentStudent
+                }
+                Else
+                {
+                    Write-Verbose "Accepting the access request of $($CurrentStudent.Name) ($($CurrentStudent.UserName)) to the group $($Group.FullName)..."
+                    $Result = Invoke-RemoteApi -Put -Resource $Constants.Resources.Group -SubPath "/$GroupId/access_requests/$CurrentStudentId/approve"
+                    If (-not $Result -or $Result.access_level -ne $Constants.AccessLevels.Developer)
+                    {
+                        Throw "Cannot approve access request of $CurrentStudentId to $GroupId"
+                    }
+
+                    $Result = Invoke-RemoteApi -Put -Resource $Constants.Resources.Group -SubPath "/$GroupId/members/$CurrentStudentId" -Attributes @{
+                        'access_level' = $Constants.AccessLevels.Developer
+                        'expires_at'   = $ExpirationDate.ToString('yyyy-MM-dd')
+                    }
+                    If (-not $Result -or (Get-Date -Date $Result.expires_at) -ne $ExpirationDate)
+                    {
+                        Throw "Cannot set up expiration datetime of member $CurrentStudentId in $GroupId. The student appears to have the access to the group for unlimited amount of time"
+                    }
+                    $Group | Get-Student -Id $CurrentStudentId
+                }
             }
-            $Group | Get-Student -Id $StudentId
         }
     }
 }
 
 Function Deny-StudentAccess
+{
+    [CmdletBinding(DefaultParameterSetName = 'UserName')]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A run of the course',
+            Mandatory   = $True
+        )]
+        [System.Object] $CourseRun,
+
+        [Parameter(
+            HelpMessage = 'A group, to remove the student from',
+            Mandatory   = $True
+        )]
+        [System.Object] $Group,
+
+        [Parameter(
+            HelpMessage       = 'A student to exclude from the group',
+            Mandatory         = $True,
+            ValueFromPipeline = $True,
+            ParameterSetName  = 'Instance'
+        )]
+        [System.Object[]] $Student,
+
+        [Parameter(
+            HelpMessage       = 'An id of the student to exclude from the group',
+            Mandatory         = $True,
+            ValueFromPipeline = $True,
+            ParameterSetName  = 'Id'
+        )]
+        [System.Int32[]] $StudentId,
+
+        [Parameter(
+            HelpMessage                     = 'A username of the student to exclude from the group',
+            Mandatory                       = $True,
+            ValueFromPipeline               = $True,
+            ValueFromPipelineByPropertyName = $True,
+            ParameterSetName                = 'UserName'
+        )]
+        [System.String[]] $UserName
+    )
+
+    Begin
+    {
+        $GroupId = $Group.Id
+    }
+
+    Process
+    {
+        $Collection = Switch($PSCmdlet.ParameterSetName)
+        {
+            'Id'       { $StudentId }
+            'Instance' { $Student   }
+            'UserName' { $UserName  }
+        }
+        ForEach ($Item in $Collection)
+        {
+            $CurrentStudentId = Switch ($PSCmdlet.ParameterSetName)
+            {
+                'Id'       { $Item }
+                'Instance' { $Item.Id }
+                'UserName' { Get-StudentId -UserName $Item }
+            }
+            If ($Null -ne $CurrentStudentId)
+            {
+                $CurrentStudent = $Group | Get-Student -Id $CurrentStudentId
+                If ($Null -eq $CurrentStudent)
+                {
+                    Write-Verbose "The student with id #$CurrentStudentId does not have the access to the group $($Group.FullName)"
+                }
+                ElseIf ($CurrentStudent.Access -eq 'Pending')
+                {
+                    Write-Verbose "Declining the access request of $($CurrentStudent.Name) ($($CurrentStudent.UserName)) to the group $($Group.FullName)..."
+                    Invoke-RemoteApi -Delete -Resource $Constants.Resources.Group -SubPath "/$GroupId/access_requests/$CurrentStudentId"
+                }
+                Else
+                {
+                    Write-Verbose "Removing $($CurrentStudent.Name) ($($CurrentStudent.UserName)) from the group $($Group.FullName)..."
+                    Invoke-RemoteApi -Delete -Resource $Constants.Resources.Group -SubPath "/$GroupId/members/$CurrentStudentId"
+                }
+            }
+        }
+    }
+}
+
+Function Get-ExpirationDate
 {
     [CmdletBinding()]
     Param
@@ -174,33 +314,41 @@ Function Deny-StudentAccess
             HelpMessage = 'A run of a course',
             Mandatory = $True
         )]
-        [System.Object] $CourseRun,
-
-        [Parameter(
-            HelpMessage = 'A group, the student reqeust access to',
-            Mandatory = $True
-        )]
-        [System.Object] $Group,
-
-        [Parameter(
-            HelpMessage = 'A student to deny the access',
-            Mandatory = $True,
-            ValueFromPipeline = $True
-        )]
-        [System.Object[]] $Student
+        [System.Object] $CourseRun
     )
 
-    Begin
-    {
-        $GroupId = $Group.Id
-    }
+    $(Switch ($CourseRun.Semester) {
+        'Spring' { Get-Date -Year $CourseRun.Year       -Month 8 -Day 31 }
+        'Autumn' { Get-Date -Year ($CourseRun.Year + 1) -Month 2 -Day 10 }
+        Default  { Throw "Unknown semester '$_'" }
+    }).Date
+}
 
-    Process
+Function Get-StudentId
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A login of the student',
+            Mandatory = $True
+        )]
+        [System.String] $UserName
+    )
+
+    $Result = Invoke-RemoteApi -Resource $Constants.Resources.User -Attributes @{
+        'username' = $UserName
+    } -ErrorVariable 'ApiError'
+
+    If (-not $ApiError)
     {
-        ForEach ($CurrentStudent in $Student)
+        If (-not $Result)
         {
-            $StudentId = $CurrentStudent.Id
-            Invoke-RemoteApi -Method DELETE -Resource $Constants.Resources.Group -SubPath "/$GroupId/access_requests/$StudentId"
+            Write-Error "No gitlab account matched the username '$UserName'"
+        }
+        Else
+        {
+            $Result.id
         }
     }
 }
