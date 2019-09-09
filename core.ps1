@@ -150,8 +150,7 @@ Function Invoke-RemoteApi
         [System.Collections.Hashtable] $Attributes = @{},
 
         [Parameter(
-            HelpMessage = 'A body of the request',
-            ParameterSetName = 'Post'
+            HelpMessage = 'A body of the request'
         )]
         [ValidateNotNull()]
         [System.Collections.Hashtable] $Body = @{}
@@ -178,13 +177,13 @@ Function Invoke-RemoteApi
                 'Accept'         = 'application/json'
                 'Accept-Charset' = 'utf-8'
                 'Authorization'  = "Bearer $PlainToken"
-                'Content-Type'   = 'application/json; charset=utf-8'
             }
             Uri     = $Url
+            ContentType = 'application/json; charset=UTF-8'
             OutFile = $ContentFile
         }
 
-        If ($Post)
+        If ($Post -or $Put)
         {
             $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
         }
@@ -211,5 +210,192 @@ Function Invoke-RemoteApi
             Remove-Item $ContentFile
         }
         [System.Net.ServicePointManager]::SecurityProtocol = $OriginalSecurityProtocol
+    }
+}
+
+Function Get-Schema
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A name of the course',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object] $CourseRun
+    )
+
+    $Course = $CourseRun.Course
+    $Year = $CourseRun.Year
+    $Semester = $CourseRun.Semester
+    $FileName = "$Course-$Year-$Semester.json"
+    $SchemaPath = Join-Path $PSScriptRoot $FileName
+    If (-not (Test-Path -PathType Leaf $SchemaPath))
+    {
+        Throw "Cannot find a schema of the $Yeas-$Semester run of the ${Course}: [$SchemaPath] does not exist"
+    }
+
+    Get-Content $SchemaPath -Encoding UTF8 | ConvertFrom-Json
+}
+
+Function Get-MilestoneDefinition
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A schema of the course',
+            Mandatory = $True
+        )]
+        [System.Object] $Schema,
+
+        [Parameter(
+            HelpMessage = 'A name of the milestone requested',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.String] $Name
+    )
+
+    $Result = $Schema.milestones | Where-Object 'name' -eq $Name
+    If (-not $Result)
+    {
+        Write-Error "Milestone '$Name' not found in the schema of the course '$($Schema.id)'"
+    }
+    ElseIf ($Result.Count -gt 1)
+    {
+        Write-Error "Multiple milestones '$Name' exist in the schema of the course '$($Schema.id)'"
+    }
+    Else
+    {
+        Return $Result
+    }
+}
+
+Function Get-MilestoneStart
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A schema of the course',
+            Mandatory = $True
+        )]
+        [System.Object] $Schema,
+
+        [Parameter(
+            HelpMessage = 'A name of the milestone',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object] $Milestone
+    )
+
+    $Start = Get-Date $Schema.start
+    $PrevMilestones = $Schema.milestones | Where-Object {
+        $_.week -lt $Milestone.Week
+    } | Sort-Object 'Week' -Descending
+    $PrevMilestone = If ($Null -ne $PrevMilestones) {
+        $PrevMilestones[0]
+    } Else {
+        0
+    }
+    $Start.AddDays(7 * $PrevMilestone.week)
+}
+
+Function Get-MilestoneFinish
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A schema of the course',
+            Mandatory = $True
+        )]
+        [System.Object] $Schema,
+
+        [Parameter(
+            HelpMessage = 'A name of the milestone',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object] $Milestone
+    )
+
+    If ($Milestone.week -lt 1)
+    {
+        Throw "A milestone's week must be greater then zero"
+    }
+
+    $Start = Get-Date $Schema.start
+    $Start.AddDays(7 * $Milestone.week - 1)
+}
+
+Function Get-DomainDefinition
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A schema of the course',
+            Mandatory = $True
+        )]
+        [System.Object] $Schema,
+
+        [Parameter(
+            HelpMessage = 'A domain requested',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.String] $Name
+    )
+
+    $Result = $Schema.domains | Where-Object 'id' -eq $Name
+    If (-not $Result)
+    {
+        Write-Error "Domain $Name not found in the schema of the course '$($Schema.id)'"
+    }
+    ElseIf ($Result.Count -gt 1)
+    {
+        Write-Error "Multiple domains $Name exist in the schema of the course '$($Schema.id)'"
+    }
+    Else
+    {
+        Return $Result
+    }
+}
+
+Function Get-AreaDefinition
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A domain of the area requested',
+            Mandatory = $True
+        )]
+        [System.Object] $Domain,
+
+        [Parameter(
+            HelpMessage = 'A name of the requested area',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.String] $Name
+    )
+
+    $Result = $Domain.areas | Where-Object 'id' -eq $Name
+    If (-not $Result)
+    {
+        Write-Error "Area $Name not found in the domain '$($Domain.id)'"
+    }
+    ElseIf ($Result.Count -gt 1)
+    {
+        Write-Error "Multiple areas $Name exist in the domain '$($Domain.id)'"
+    }
+    Else
+    {
+        Return $Result
     }
 }

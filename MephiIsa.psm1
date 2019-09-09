@@ -19,6 +19,9 @@ Export-ModuleMember -Function @(
     'Get-CourseRun'
     'Get-Group'
 
+    'Get-Milestone'
+    'Sync-Milestone'
+
     'Get-Student'
     'Grant-StudentAccess'
     'Deny-StudentAccess'

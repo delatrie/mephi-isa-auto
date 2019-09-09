@@ -176,6 +176,7 @@ Function Get-CourseRun
 
                     [PSCustomObject]@{
                         Id = $_.id
+                        Course = $CurrentCourse.Name
                         Year = $CurrentRunYear
                         Semester = $Semesters | Where-Object { $_ -eq $CurrentRunSemester }
                         Description = $_.description
@@ -183,6 +184,177 @@ Function Get-CourseRun
                 } | Where-Object {
                     $PSCmdlet.ParameterSetName -eq 'All' -or ((-not $HasYear -or $_.Year -eq $Year) -and (-not $HasSemester -or $_.Semester -eq $Semester))
                 } | Sort-Object Year, { $Semesters.IndexOf($_.Semester) }
+        }
+    }
+}
+
+Function Sync-Milestone
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A run of the course',
+            ValueFromPipeline = $True
+        )]
+        [ValidateNotNull()]
+        [System.Object[]] $CourseRun,
+
+        [Parameter(
+            HelpMessage = 'Only check correctness of the actual milestones'
+        )]
+        [Switch] $CheckOnly
+    )
+
+    Process
+    {
+        ForEach ($CurrentCourseRun in $CourseRun)
+        {
+            $CurrentCourseRunId = $CurrentCourseRun.Id
+            $Schema = $CurrentCourseRun | Get-Schema
+
+            $DefinedMilestones = $Schema.milestones | ForEach-Object {
+                [PSCustomObject]@{
+                    Name = $_.name
+                    Description = $_.description
+                    From = ($_ | Get-MilestoneStart -Schema $Schema)
+                    To = ($_ | Get-MilestoneFinish -Schema $Schema)
+                }
+            }
+
+            $ActualMilestones = Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/milestones" |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        Id = $_.id
+                        Name = $_.title
+                        Description = $_.description
+                        From = (Get-Date $_.start_date)
+                        To = (Get-Date $_.due_date)
+                    }
+                }
+
+            Compare-Object -ReferenceObject $DefinedMilestones -DifferenceObject $ActualMilestones -Property 'Name' -IncludeEqual |
+                ForEach-Object {
+                    $Name = $_.Name
+                    Switch ($_.SideIndicator)
+                    {
+                        '<='
+                        {
+                            Write-Warning "Missing milestone '$Name'"
+                            If (-not $CheckOnly)
+                            {
+                                $ReferenceMilestone = $DefinedMilestones | Where-Object Name -eq $Name
+                                $CreateParams = @{
+                                    'Post' = $True
+                                    'Resource' = $Constants.Resources.Group
+                                    'SubPath' = "/$CurrentCourseRunId/milestones"
+                                    'Body' = @{
+                                        'title' = $Name
+                                        'description' = $ReferenceMilestone.Description
+                                        'start_date' = (Get-Date $ReferenceMilestone.From -Format 'yyyy-MM-dd')
+                                        'due_date' = (Get-Date $ReferenceMilestone.To -Format 'yyyy-MM-dd')
+                                    }
+                                }
+                                Invoke-RemoteApi @CreateParams | ForEach-Object {
+                                    Write-Verbose "Milestone # $($_.id) '$($_.title)' has been corrected ($($_.start_date) - $($_.due_date))"
+                                }
+                            }
+                        }
+
+                        '=>'
+                        {
+                            Write-Warning "Extra milestone '$Name'"
+                            If (-not $CheckOnly)
+                            {
+                                $DifferenceMilestone = $ActualMilestones | Where-Object Name -eq $Name
+                                $DeleteParams = @{
+                                    'Delete' = $True
+                                    'Resource' = $Constants.Resources.Group
+                                    'SubPath' = "/$CurrentCourseRunId/milestones/$($DifferenceMilestone.Id)"
+                                }
+                                Invoke-RemoteApi @DeleteParams
+                                Write-Verbose "Milestone $Name has been deleted"
+                            }
+                        }
+
+                        '=='
+                        {
+                            $CorrectBody = @{}
+                            $ReferenceMilestone = $DefinedMilestones | Where-Object Name -eq $Name
+                            $DifferenceMilestone = $ActualMilestones | Where-Object Name -eq $Name
+                            If ($ReferenceMilestone.From -ne $DifferenceMilestone.From)
+                            {
+                                Write-Warning "Mismatch between defined and actual start of the milestone '$Name': $($ReferenceMilestone.From) != $($DifferenceMilestone.From)"
+                                $CorrectBody['start_date'] = Get-Date $ReferenceMilestone.From -Format 'yyyy-MM-dd'
+                            }
+                            If ($ReferenceMilestone.To -ne $DifferenceMilestone.To)
+                            {
+                                Write-Warning "Mismatch between defined and actual finish of the milestone '$Name': $($ReferenceMilestone.To) != $($DifferenceMilestone.To)"
+                                $CorrectBody['due_date'] = Get-Date $ReferenceMilestone.To -Format 'yyyy-MM-dd'
+                            }
+                            If ($ReferenceMilestone.Description -ne $DifferenceMilestone.Description)
+                            {
+                                Write-Warning "Mismatch between defined and actual description of the milestone '$Name': '$($ReferenceMilestone.Description)' != '$($DifferenceMilestone.Description)'"
+                                $CorrectBody['description'] = $ReferenceMilestone.Description
+                            }
+                            If (-not $CheckOnly -and $CorrectBody.Count -gt 0)
+                            {
+                                $CorrectParams = @{
+                                    'Put' = $True
+                                    'Resource' = $Constants.Resources.Group
+                                    'SubPath' = "/$CurrentCourseRunId/milestones/$($DifferenceMilestone.Id)"
+                                    'Body' = $CorrectBody
+                                }
+
+                                Invoke-RemoteApi @CorrectParams | ForEach-Object {
+                                    Write-Verbose "Milestone # $($DifferenceMilestone.Id) has been corrected"
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+    }
+}
+
+Function Get-Milestone
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A run of the course',
+            ValueFromPipeline = $True
+        )]
+        [ValidateNotNull()]
+        [System.Object[]] $CourseRun,
+
+        [Parameter(
+            HelpMessage = 'Get current milestone only'
+        )]
+        [Switch] $Current
+    )
+
+    Process
+    {
+        ForEach ($CurrentCourseRun in $CourseRun)
+        {
+            $CurrentCourseRunId = $CurrentCourseRun.Id
+            $Schema = $CurrentCourseRun | Get-Schema
+
+            Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/milestones" |
+                ForEach-Object {
+                    $Definition = $_.title | Get-MilestoneDefinition -Schema $Schema
+                    [PSCustomObject]@{
+                        Id = $_.id
+                        Definition = $Definition
+                        From = (Get-Date $_.start_date)
+                        To = (Get-Date $_.due_date)
+                    }
+                } | Where-Object {
+                    $dt = [System.DateTime]::Now.Date
+                    -not $Current -or ($_.From -le $dt -and $_.To -ge $dt)
+                } | Sort-Object -Property 'From'
         }
     }
 }
