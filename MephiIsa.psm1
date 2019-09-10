@@ -27,4 +27,5 @@ Export-ModuleMember -Function @(
     'Deny-StudentAccess'
 
     'Get-Project'
+    'Sync-Project'
 )

@@ -2,6 +2,25 @@
     "id": "isa",
     "name": "Архитектура информационных систем",
     "start": "2019-09-01",
+    "teachers": [
+        {
+            "id": "Shust-li",
+            "name": "Шустова Лариса Ивановна",
+            "email": "shust-li@yandex.ru"
+        },
+        {
+            "id": "kriomer",
+            "name": "Прокофьев Антон Олегович",
+            "email": "kriomer@mail.ru",
+            "telegram": "kriomer"
+        },
+        {
+            "id": "delatrie",
+            "name": "Степанов Максим Максимович",
+            "email": "mmstepanov@mephi.ru",
+            "telegram": "Delatrie"
+        }
+    ],
     "milestones": [
         {
             "name": "Контроль раздела 1",
@@ -11,23 +30,33 @@
             "requirenments": [
                 {
                     "name": "Интервьюирование",
-                    "week": 2
+                    "description": "",
+                    "week": 2,
+                    "points": 2
                 },
                 {
                     "name": "Требования к системе",
-                    "week": 3
+                    "description": "",
+                    "week": 3,
+                    "points": 2
                 },
                 {
                     "name": "Тестовые случаи",
-                    "week": 3
+                    "description": "",
+                    "week": 3,
+                    "points": 2
                 },
                 {
                     "name": "Диаграммы Use Case",
-                    "week": 4
+                    "description": "",
+                    "week": 4,
+                    "points": 2
                 },
                 {
                     "name": "Диаграммы BPMN",
-                    "week": 4
+                    "description": "",
+                    "week": 4,
+                    "points": 2
                 }
             ]
         },
@@ -39,19 +68,27 @@
             "requirenments": [
                 {
                     "name": "Диаграмма классов / функциональное описание",
-                    "week": 6
+                    "description": "",
+                    "week": 6,
+                    "points": 2
                 },
                 {
                     "name": "Оценка трудозатрат",
-                    "week": 6
+                    "description": "",
+                    "week": 6,
+                    "points": 2
                 },
                 {
                     "name": "Реализация бизнес-объектов",
-                    "week": 7
+                    "description": "",
+                    "week": 7,
+                    "points": 3
                 },
                 {
-                    "name": "Модульные тесты",
-                    "week": 7
+                    "name": "Модульные тесты бизнес-объектов",
+                    "description": "",
+                    "week": 7,
+                    "points": 3
                 }
             ]
         },
@@ -63,11 +100,15 @@
             "requirenments": [
                 {
                     "name": "Бизнес-компонент",
-                    "week": 9
+                    "description": "",
+                    "week": 9,
+                    "points": 5
                 },
                 {
                     "name": "Интеграционные тесты",
-                    "week": 9
+                    "description": "",
+                    "week": 9,
+                    "points": 5
                 }
             ]
         },
@@ -79,29 +120,36 @@
             "requirenments": [
                 {
                     "name": "Расширение приложения 1",
-                    "week": 12
+                    "description": "",
+                    "week": 12,
+                    "points": 5
                 },
                 {
                     "name": "Расширение приложения 2",
-                    "week": 14
+                    "description": "",
+                    "week": 14,
+                    "points": 5
                 },
                 {
                     "name": "Расширение приложения 3",
-                    "week": 15
+                    "description": "",
+                    "week": 15,
+                    "points": 5
                 }
             ]
         }
     ],
     "domains": [
         {
-            "id": "Institute",
-            "name": "Институт",
-            "description": "Организация занимается хранением печатных произведений для общественного пользования. Произведения хранятся как в письменном, так и в электронном виде. Читатели библиотеки могут брать литературу для временного пользования в читальном зале, либо на дом.",
+            "id": "Something",
+            "name": "Нечто",
+            "description": "Описание предметной области",
+            "teacher": "Shust-li",
             "areas": [
                 {
-                    "id": "Matriculation",
-                    "name": "Учет поступающих",
-                    "description": "Управление читальным фондом подразумевает закупку новых изданий и списание старых."
+                    "id": "Somewhere",
+                    "name": "Что-то",
+                    "description": "Описание бизнес-процессов"
                 }
             ]
         }

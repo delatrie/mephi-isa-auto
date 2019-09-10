@@ -21,7 +21,10 @@ $DegreePattern = ($Degrees.Keys | ForEach-Object {
 
 Function Get-Course
 {
-    [CmdletBinding(DefaultParameterSetName = 'Name')]
+    [CmdletBinding(
+        DefaultParameterSetName = 'Name',
+        SupportsShouldProcess = $True
+    )]
     Param
     (
         [Parameter(
@@ -40,47 +43,85 @@ Function Get-Course
             ParameterSetName = 'Id',
             Position = 0
         )]
-        [System.Int32[]] $Id
+        [System.Int32[]] $Id,
+
+        [Parameter(
+            HelpMessage = 'Automatically create missing course labels'
+        )]
+        [Switch] $Force
     )
 
-    Switch ($PSCmdlet.ParameterSetName)
+    Begin
     {
-        'Name'
+        If (-not $PSBoundParameters.ContainsKey('Verbose'))
         {
-            $Groups = Invoke-RemoteApi -Resource $Constants.Resources.Group -Attributes @{
-                owned = 'true'
+            $VerbosePreference = $PSCmdlet.SessionState.PSVariable.GetValue('VerbosePreference')
+        }
+        If (-not $PSBoundParameters.ContainsKey('Confirm'))
+        {
+            $ConfirmPreference = $PSCmdlet.SessionState.PSVariable.GetValue('ConfirmPreference')
+        }
+        If (-not $PSBoundParameters.ContainsKey('WhatIf'))
+        {
+            $WhatIfPreference = $PSCmdlet.SessionState.PSVariable.GetValue('WhatIfPreference')
+        }
+    }
+
+    End
+    {
+        Switch ($PSCmdlet.ParameterSetName)
+        {
+            'Name'
+            {
+                $Groups = Invoke-RemoteApi -Resource $Constants.Resources.Group -Attributes @{
+                    owned = 'true'
+                }
+            }
+
+            'Id'
+            {
+                $Groups = $Id | ForEach-Object {
+                    "/$Id"
+                } | ForEach-Object {
+                    Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath $_
+                }
             }
         }
 
-        'Id'
-        {
-            $Groups = $Id | ForEach-Object {
-                "/$Id"
-            } | ForEach-Object {
-                Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath $_
+        $Groups | Where-Object {
+            $Null -eq $_.parent_id -and $_.name.StartsWith($Constants.CourseGroupPrefix)
+        } | ForEach-Object {
+            [PSCustomObject]@{
+                Id = $_.id
+                Name = $_.name.Substring($Constants.CourseGroupPrefix.Length)
+                Url = $_.web_url
+                Description = $_.description
             }
+        } | Where-Object {
+            $PSCmdlet.ParameterSetName -ne 'Name' -or $_.Name -in $Name
+        } | ForEach-Object {
+            $Label = Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$($_.Id)/labels" |
+                Where-Object {
+                    $_.name -eq $Constants.CourseLabel.Name
+                }
+            If ($Null -eq $Label)
+            {
+                If ($Force -or $PSCmdlet.ShouldContinue("Course '$($_.Name)' misses label '$($Constants.CourseLabel.Name)'. Do you want to create it?", "Missing course label"))
+                {
+                    $Label = Invoke-RemoteApi -Post -Resource $Constants.Resources.Group -SubPath "/$($_.Id)/labels" -Body @{
+                        name        = $Constants.CourseLabel.Name
+                        color       = $Constants.CourseLabel.Color
+                        description = $Constants.CourseLabel.Description
+                    }
+                    If (-not $Label -or $Label.name -ne $Constants.CourseLabel.Name)
+                    {
+                        Write-Error "Cannot create the label '$($Constants.CourseLabel.Name)' for the course '$($_.Name)'. The label is still missing"
+                    }
+                }
+            }
+            Write-Output $_
         }
     }
-
-    $Groups = $Groups | Where-Object {
-        $Null -eq $_.parent_id -and $_.name.StartsWith($Constants.CourseGroupPrefix)
-    } | ForEach-Object {
-        [PSCustomObject]@{
-            Id = $_.id
-            Name = $_.name.Substring($Constants.CourseGroupPrefix.Length)
-            Url = $_.web_url
-            Description = $_.description
-        }
-    }
-
-    If ($Name)
-    {
-        $Groups = $Groups | Where-Object {
-            $_.Name -in $Name
-        }
-    }
-
-    Return $Groups
 }
 
 Function Get-CourseRun
@@ -174,11 +215,13 @@ Function Get-CourseRun
                     [System.Int32] $CurrentRunYear = $Match.Groups['year'].Value
                     $CurrentRunSemester = $Match.Groups['half'].Value
 
+                    $Semester = $Semesters | Where-Object { $_ -eq $CurrentRunSemester }
                     [PSCustomObject]@{
                         Id = $_.id
+                        FullName = "$CurrentRunYear-$Semester"
                         Course = $CurrentCourse.Name
                         Year = $CurrentRunYear
-                        Semester = $Semesters | Where-Object { $_ -eq $CurrentRunSemester }
+                        Semester = $Semester
                         Description = $_.description
                     }
                 } | Where-Object {
@@ -201,7 +244,7 @@ Function Sync-Milestone
         [System.Object[]] $CourseRun,
 
         [Parameter(
-            HelpMessage = 'Only check correctness of the actual milestones'
+            HelpMessage = 'Only check correctness of actual milestones'
         )]
         [Switch] $CheckOnly
     )
@@ -222,7 +265,7 @@ Function Sync-Milestone
                 }
             }
 
-            $ActualMilestones = Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/milestones" |
+            $ActualMilestones = @(Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/milestones" |
                 ForEach-Object {
                     [PSCustomObject]@{
                         Id = $_.id
@@ -231,7 +274,7 @@ Function Sync-Milestone
                         From = (Get-Date $_.start_date)
                         To = (Get-Date $_.due_date)
                     }
-                }
+                })
 
             Compare-Object -ReferenceObject $DefinedMilestones -DifferenceObject $ActualMilestones -Property 'Name' -IncludeEqual |
                 ForEach-Object {
@@ -256,7 +299,7 @@ Function Sync-Milestone
                                     }
                                 }
                                 Invoke-RemoteApi @CreateParams | ForEach-Object {
-                                    Write-Verbose "Milestone # $($_.id) '$($_.title)' has been corrected ($($_.start_date) - $($_.due_date))"
+                                    Write-Verbose "Milestone # $($_.id) '$($_.title)' has been created (dates are $($_.start_date) - $($_.due_date))"
                                 }
                             }
                         }
@@ -307,7 +350,7 @@ Function Sync-Milestone
                                 }
 
                                 Invoke-RemoteApi @CorrectParams | ForEach-Object {
-                                    Write-Verbose "Milestone # $($DifferenceMilestone.Id) has been corrected"
+                                    Write-Verbose "Milestone $Name # $($DifferenceMilestone.Id) has been corrected"
                                 }
                             }
                         }
