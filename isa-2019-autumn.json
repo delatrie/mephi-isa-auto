@@ -187,6 +187,64 @@
             ]
         },
         {
+            "id": "ProjectManagement",
+            "teacher": "kriomer",
+            "name": "Проектное управление",
+            "description": "",
+            "areas": [
+                {
+                    "id": "Extraction",
+                    "name": "Выгрузка информации",
+                    "description": "Выгрузка информации из https://taiga.io/ и формирование очередей задач по проекту"
+                },
+                {
+                    "id": "ToDo",
+                    "name": "ToDo лист",
+                    "description": "Мобильное приложение ToDo List с общим доступом и возможностью настройки элементов строки"
+                },
+                {
+                    "id": "EffortTracking",
+                    "name": "Сбор трудозатрат",
+                    "description": "Мобильное приложение для сбора фактических трудозатрат с ресурсов"
+                },
+                {
+                    "id": "KPI",
+                    "name": "Управление показателями",
+                    "description": "Система для управления показателями и ведения рейтингов"
+                }
+            ]
+        },
+        {
+            "id": "PassengerTransport",
+            "teacher": "kriomer",
+            "name": "Пассажирские перевозки",
+            "description": "",
+            "areas": [
+                {
+                    "id": "RoutingTickets",
+                    "name": "Управление маршрутами и продажа билетов"
+                },
+                {
+                    "id": "StreamAnalysis",
+                    "name": "Анализ пассажиропотока",
+                    "description": "Система аналитики пассажиропотока на зональных маршрутах"
+                }
+            ]
+        },
+        {
+            "id": "SocialNetworks",
+            "name": "Социальная сеть",
+            "teacher": "kriomer",
+            "description": "",
+            "areas": [
+                {
+                    "id": "Microblog",
+                    "name": "Микроблог",
+                    "description": "Микроблог с возможностью настройки формы поста"
+                }
+            ]
+        },
+        {
             "id": "Retail",
             "teacher": "delatrie",
             "name": "Сеть продуктовых магазинов",

@@ -55,6 +55,7 @@ Function Sync-Project
     {
         ForEach ($CurrentCourseRun in $CourseRun)
         {
+            $Groups = Get-Group -CourseRun $CurrentCourseRun
             $CurrentCourseRunId = $CurrentCourseRun.Id
             $CurrentCourse = $CurrentCourseRun.Course
 
@@ -160,6 +161,8 @@ Function Sync-Project
                                 WikiAccess          = $_.wiki_access_level
                                 SnippetsAccess      = $_.snippets_access_level
                                 Tasks               = $Tasks
+                                SharedWith          = $_.shared_with_groups
+                                GitlabProject       = $_
                             }
                         }
                         Else
@@ -217,6 +220,7 @@ Function Sync-Project
                                     {
                                         $CommitName = Read-Host -Prompt 'Please, enter your commit name here'
                                     }
+                                    $Domain = $ActualProject.Domain
                                     $Teacher = $Schema.teachers | Where-Object { $_.id -eq $Domain.teacher }
                                     If (-not $Teacher)
                                     {
@@ -231,6 +235,16 @@ Function Sync-Project
                                         commit_message = 'Initialize repository, create README.md'
                                     } | ForEach-Object {
                                         Write-Verbose "README.md for $($Project.name) created"
+                                    }
+                                    Start-Sleep -Seconds 5
+                                    $Groups | ForEach-Object {
+                                        Write-Verbose "$_"
+                                        Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/share" -Body @{
+                                            group_id = $_.Id
+                                            group_access = $Constants.AccessLevels.Guest
+                                        } | ForEach-Object {
+                                            Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
+                                        }
                                     }
                                 }
                             }
@@ -312,7 +326,7 @@ Function Sync-Project
                             }
 
                             $DefinedTasks = $ProjectDefinition.Tasks
-                            $ActualTasks = $ActualProject.Tasks
+                            $ActualTasks = @($ActualProject.Tasks)
 
                             $RequirenmentSync = @(Compare-Object -ReferenceObject $DefinedTasks -DifferenceObject $ActualTasks -Property 'Name' -IncludeEqual |
                                 ForEach-Object {
@@ -385,13 +399,54 @@ Function Sync-Project
                                             }
                                         }
                                     }
-                                })
+                                }
+                            )
+
+                            $SharedWith = @($ActualProject.SharedWith | ForEach-Object {
+                                $_.group_id
+                            })
+
+                            $MissingGroups = $Groups | Where-Object {
+                                $_.Id -notin $SharedWith
+                            }
+
+                            If ($MissingGroups)
+                            {
+                                Write-Warning "The project '$FullName' is not shared with the group(s) $($MissingGroups.FullName)"
+                            }
+
+                            $Domain = $ActualProject.Domain
+                            $Teacher = $Schema.teachers | Where-Object { $_.id -eq $Domain.teacher }
+                            $Readme = Get-ProjectReadme -Schema $Schema -Domain $Domain -Teacher $Teacher -Area $ActualProject.Area -CourseRun $CurrentCourseRun -Project $ActualProject.GitlabProject
+                            $Path = [System.Net.WebUtility]::UrlEncode('README.md')
+                            $ActualReadme = Invoke-RemoteApi -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/repository/files/$Path" -Attributes @{
+                                ref = 'master'
+                            } | ForEach-Object {
+                                $bytes = [System.Convert]::FromBase64String($_.content)
+                                [System.Text.Encoding]::UTF8.GetString($bytes)
+                            }
+
+                            If ($Readme -ne $ActualReadme)
+                            {
+                                Write-Warning "The project's '$FullName' README.md does not match reference value: '$Readme' != '$ActualReadme'"
+                            }
 
                             If (-not $CheckOnly -and $CorrectBody.Count -gt 0 -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to make $($CorrectBody.Count) correction(s) to the project?", "Project '$FullName' correction", [ref] $Force, [ref] $CheckOnly)))
                             {
                                 $ProjectId = $ActualProject.Id
-                                Invoke-RemoteApi -Resource $Constants.Resources.Project -SubPath "/$ProjectId" -Body $CorrectBody | ForEach-Object {
+                                Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$ProjectId" -Body $CorrectBody | ForEach-Object {
                                     Write-Verbose "Project $FullName has been corrected"
+                                }
+                            }
+                            If (-not $CheckOnly -and $MissingGroups -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to share the project with the groups?", "The project '$FullName' sharing with '$($MissingGroups.FullName)'", [ref] $Force, [ref] $CheckOnly)))
+                            {
+                                $MissingGroups | ForEach-Object {
+                                    Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/share" -Body @{
+                                        group_id = $_.Id
+                                        group_access = $Constants.AccessLevels.Guest
+                                    } | ForEach-Object {
+                                        Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
+                                    }
                                 }
                             }
                             If (-not $CheckOnly -and $RequirenmentSync.Count -gt 0 -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct $($RequirenmentSync.Count) issues?", "The project '$FullName' issues correction", [ref] $Force, [ref] $CheckOnly)))
@@ -430,6 +485,28 @@ Function Sync-Project
                                     }
                                 }
                             }
+
+                            If (-not $CheckOnly -and $Readme -ne $ActualReadme -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct README.md?", "The project '$FullName' README.md correction", [ref] $Force, [ref] $CheckOnly)))
+                            {
+                                $Path = [System.Net.WebUtility]::UrlEncode('README.md')
+                                While (-not $CommitEmail)
+                                {
+                                    $CommitEmail = Read-Host -Prompt 'A README.md of the existing project is being updated and an email is required to commit the file. Please, enter your commit email here'
+                                }
+                                While (-not $CommitName)
+                                {
+                                    $CommitName = Read-Host -Prompt 'Please, enter your commit name here'
+                                }
+                                Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/repository/files/$Path" -Body @{
+                                    branch = 'master'
+                                    author_email = $CommitEmail
+                                    author_name = $CommitName
+                                    content = $Readme
+                                    commit_message = 'Update README.md'
+                                } | ForEach-Object {
+                                    Write-Verbose "README.md of $($ActualProject.FullName) has been updated"
+                                }
+                            }
                         }
                     }
                 }
@@ -462,8 +539,8 @@ Function Get-Project
                 $_.name -match $ProjectNamePattern
             } | ForEach-Object {
                 $Match = $ProjectNamePattern.Match($_.name)
-                $Domain = $Match.Groups['domain'].Value | Get-Domain -Schema $Schema
-                $Area = $Match.Groups['area'].Value | Get-Area -Domain $Domain
+                $Domain = $Match.Groups['domain'].Value | Get-DomainDefinition -Schema $Schema
+                $Area = $Match.Groups['area'].Value | Get-AreaDefinition -Domain $Domain
                 [PSCustomObject]@{
                     Id = $_.id
                     FullName = $_.name

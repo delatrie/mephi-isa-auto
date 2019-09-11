@@ -10,6 +10,7 @@ Param
 . "$PSScriptRoot\MephiIsa-CourseStructure.ps1"
 . "$PSScriptRoot\MephiIsa-Students.ps1"
 . "$PSScriptRoot\MephiIsa-Projects.ps1"
+. "$PSScriptRoot\MephiIsa-Assignments.ps1"
 
 Export-ModuleMember -Function @(
     'Update-PersonalToken'
@@ -28,4 +29,7 @@ Export-ModuleMember -Function @(
 
     'Get-Project'
     'Sync-Project'
+
+    'New-AssignmentMap'
+    'Set-Assignment'
 )
