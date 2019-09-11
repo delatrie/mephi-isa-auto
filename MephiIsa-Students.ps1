@@ -42,7 +42,8 @@ Function Get-Student
         [Parameter(
             HelpMessage      = 'A name of the student',
             Mandatory        = $True,
-            ParameterSetName = 'NameQuery'
+            ParameterSetName = 'NameQuery',
+            Position         = 0
         )]
         [ValidateNotNullOrEmpty()]
         [System.String] $Name
@@ -101,7 +102,7 @@ Function Get-Student
                 $StudentId = $_.Id
                 $UserInfo  = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$StudentId"
                 $_.Email   = $UserInfo.public_email
-                $_
+                Write-Output $_
             }
         }
     }

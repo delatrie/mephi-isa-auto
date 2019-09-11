@@ -32,4 +32,5 @@ Export-ModuleMember -Function @(
 
     'New-AssignmentMap'
     'Set-Assignment'
+    'Remove-Assignment'
 )

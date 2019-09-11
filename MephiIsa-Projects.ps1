@@ -105,7 +105,9 @@ Function Sync-Project
                 }
             }
 
-            $ActualProjects = @(Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/projects" |
+            $ActualProjects = @(Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/projects" -Attributes @{
+                per_page = 100
+            } |
                 Where-Object { $_.name -match $ProjectNamePattern } |
                 ForEach-Object {
                     $Project = $_
@@ -163,6 +165,7 @@ Function Sync-Project
                                 Tasks               = $Tasks
                                 SharedWith          = $_.shared_with_groups
                                 GitlabProject       = $_
+                                Url                 = $_.web_url
                             }
                         }
                         Else
@@ -192,7 +195,7 @@ Function Sync-Project
                                     path                        = $ProjectDefinition.FullName.ToLower()
                                     description                 = $ProjectDefinition.Description
                                     namespace_id                = $CurrentCourseRunId
-                                    visibility                  = $ProjectDefinition.Visibility
+                                    visibility                  = 'private'
                                     tag_list                    = $ProjectDefinition.Tags
                                     request_access_enabled      = $ProjectDefinition.RequestAccess
                                     issues_access_level         = $ProjectDefinition.IssuesAccess
@@ -205,10 +208,11 @@ Function Sync-Project
                                     $Project = $_
                                     $ProjectId = $_.id
                                     Write-Verbose "Project $FullName has been created"
-                                    $Milestones | ForEach-Object {
+                                    $CreatedIssues = $Milestones | ForEach-Object {
                                         $Milestone = $_
                                         $Milestone.Definition.requirenments | New-Issue -Course $Schema -Project $Project -Milestone $_ | ForEach-Object {
                                             Write-Verbose "Issue #$($_.id) '$($_.title)' of project #$ProjectId '$($Project.name)' has been created as part of the milestone #$($_.milestone.id) '$($Milestone.Definition.Name)'"
+                                            $_
                                         }
                                     }
                                     $Path = [System.Net.WebUtility]::UrlEncode('README.md')
@@ -220,7 +224,7 @@ Function Sync-Project
                                     {
                                         $CommitName = Read-Host -Prompt 'Please, enter your commit name here'
                                     }
-                                    $Domain = $ActualProject.Domain
+                                    $Domain = $ProjectDefinition.Domain
                                     $Teacher = $Schema.teachers | Where-Object { $_.id -eq $Domain.teacher }
                                     If (-not $Teacher)
                                     {
@@ -236,15 +240,51 @@ Function Sync-Project
                                     } | ForEach-Object {
                                         Write-Verbose "README.md for $($Project.name) created"
                                     }
-                                    Start-Sleep -Seconds 5
+
                                     $Groups | ForEach-Object {
                                         Write-Verbose "$_"
-                                        Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/share" -Body @{
+                                        Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$ProjectId/share" -Body @{
                                             group_id = $_.Id
                                             group_access = $Constants.AccessLevels.Guest
                                         } | ForEach-Object {
-                                            Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
+                                            Write-Verbose "The project '$($Project.name)' has been shared with the group $($_.group_name)"
                                         }
+                                    }
+                                    If ($ProjectDefinition.Visibility -ne 'private')
+                                    {
+                                        Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$ProjectId" -Body @{
+                                            visibility = $ProjectDefinition.Visibility
+                                        } | ForEach-Object {
+                                            Write-Verbose "Project $FullName has been published"
+                                        }
+
+                                        # Weights are disabled for issues of a private project in the free tier
+                                        # of Gitlab. Once a project visibility changed to public issue weights
+                                        # are requird to be set again.
+                                        If ($ProjectDefinition.Visibility -eq 'public')
+                                        {
+                                            $AllRequirenments = $Milestones | ForEach-Object {
+                                                $_.Definition.requirenments
+                                            }
+                                            $CreatedIssues | ForEach-Object {
+                                                $IssueId = $_.id
+                                                $IssueName = $_.title
+                                                $IssueDefinition = $AllRequirenments | Where-Object {
+                                                    $_.name -eq $IssueName
+                                                }
+                                                Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$ProjectId/issues/$IssueId" -Body @{
+                                                    weight = $IssueDefinition.points
+                                                } | ForEach-Object {
+                                                    Write-Verbose "Issue #$($_.id) '$($_.title)' of project #$ProjectId '$($Project.name)': points has been set to $($_.weight)"
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    [PSCustomObject]@{
+                                        Status    = 'Created'
+                                        FullName  = $_.title
+                                        Url       = $_.web_url
                                     }
                                 }
                             }
@@ -438,6 +478,11 @@ Function Sync-Project
                                     Write-Verbose "Project $FullName has been corrected"
                                 }
                             }
+                            $OutputResult = [PSCustomObject]@{
+                                Status    = 'Validated'
+                                FullName  = $ActualProject.FullName
+                                Url       = $ActualProject.Url
+                            }
                             If (-not $CheckOnly -and $MissingGroups -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to share the project with the groups?", "The project '$FullName' sharing with '$($MissingGroups.FullName)'", [ref] $Force, [ref] $CheckOnly)))
                             {
                                 $MissingGroups | ForEach-Object {
@@ -448,6 +493,7 @@ Function Sync-Project
                                         Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
                                     }
                                 }
+                                $OutputResult.Operation = 'Corrected'
                             }
                             If (-not $CheckOnly -and $RequirenmentSync.Count -gt 0 -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct $($RequirenmentSync.Count) issues?", "The project '$FullName' issues correction", [ref] $Force, [ref] $CheckOnly)))
                             {
@@ -484,6 +530,7 @@ Function Sync-Project
                                         }
                                     }
                                 }
+                                $OutputResult.Operation = 'Corrected'
                             }
 
                             If (-not $CheckOnly -and $Readme -ne $ActualReadme -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct README.md?", "The project '$FullName' README.md correction", [ref] $Force, [ref] $CheckOnly)))
@@ -506,7 +553,10 @@ Function Sync-Project
                                 } | ForEach-Object {
                                     Write-Verbose "README.md of $($ActualProject.FullName) has been updated"
                                 }
+                                $OutputResult.Operation = 'Corrected'
                             }
+
+                            Write-Output $OutputResult
                         }
                     }
                 }

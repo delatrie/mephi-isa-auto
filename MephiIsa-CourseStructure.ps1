@@ -416,7 +416,8 @@ Function Get-Group
 
         [Parameter(
             HelpMessage = 'A name of the group',
-            ParameterSetName = 'Single'
+            ParameterSetName = 'Single',
+            Position = 0
         )]
         [ValidateNotNullOrEmpty()]
         [System.String] $Name = $Null,

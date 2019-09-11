@@ -194,9 +194,9 @@ Function Invoke-RemoteApi
                 'Accept-Charset' = 'utf-8'
                 'Authorization'  = "Bearer $PlainToken"
             }
-            Uri     = $Url
             ContentType = 'application/json; charset=UTF-8'
-            OutFile = $ContentFile
+            OutFile     = $ContentFile
+            PassThru    = $True
         }
 
         If ($Post -or $Put)
@@ -204,19 +204,29 @@ Function Invoke-RemoteApi
             $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
         }
 
-        Invoke-WebRequest @InvokeWebRequestParams
+        $ResultList = [System.Collections.ArrayList]::new()
 
-        $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
-        If ($Result -is [System.Array])
+        Do
         {
-            For ($i = 0; $i -lt $Result.Length; $i++)
+            $Response = Invoke-WebRequest -Uri $Url @InvokeWebRequestParams
+            $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
+            $ResultList.Add($Result) | Out-Null
+            $Url = $Response.RelationLink['next']
+        } While ($Url)
+
+        $ResultList | ForEach-Object {
+            $Result = $_
+            If ($Result -is [System.Array])
             {
-                $Result[$i]
+                For ($i = 0; $i -lt $Result.Length; $i++)
+                {
+                    $Result[$i]
+                }
             }
-        }
-        Else
-        {
-            $Result
+            Else
+            {
+                $Result
+            }
         }
     }
     Finally
