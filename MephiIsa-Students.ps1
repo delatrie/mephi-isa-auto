@@ -73,7 +73,7 @@ Function Get-Student
                         }
                     }
             } Catch {
-                If ($_.Exception -isnot [System.Net.WebException] -or $_.Exception.Response.StatusCode -ne [System.Net.HttpStatusCode]::NotFound)
+                If ($_.Exception -isnot [Microsoft.PowerShell.Commands.HttpResponseException] -or $_.Exception.Response.StatusCode -ne [System.Net.HttpStatusCode]::NotFound)
                 {
                     Throw
                 }
@@ -318,11 +318,7 @@ Function Get-ExpirationDate
         [System.Object] $CourseRun
     )
 
-    $(Switch ($CourseRun.Semester) {
-        'Spring' { Get-Date -Year $CourseRun.Year       -Month 8 -Day 31 }
-        'Autumn' { Get-Date -Year ($CourseRun.Year + 1) -Month 2 -Day 10 }
-        Default  { Throw "Unknown semester '$_'" }
-    }).Date
+    Get-Date ($CourseRun | Get-Schema).end
 }
 
 Function Get-StudentId
