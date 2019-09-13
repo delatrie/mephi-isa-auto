@@ -35,6 +35,10 @@ Function Get-Assignment
 
                 $Definition = $_.title | Get-RequirenmentDefinition -Milestone $Milestone.Definition
 
+                $State = Switch ($_.state) {
+                    'opened' { If ('Doing' -in $_.labels) { 'InProgress' } ElseIf ( 'To Do' -in $_.labels ) { 'Assigned' } Else { 'InQueue' } }
+                }
+
                 [PSCustomObject]@{
                     Id          = $_.iid
                     Name        = $_.title
@@ -43,6 +47,8 @@ Function Get-Assignment
                     Description = $_.description
                     Url         = $_.web_url
                     Grade       = $_.weight
+
+                    IsCurrent   = 'Doing' -in $_.labels
 
                     Definition  = $Definition
 
