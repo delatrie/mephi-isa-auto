@@ -1,6 +1,59 @@
 . "$PSScriptRoot\core.ps1"
 
 $ProjectResource = $Constants.Resources.Project
+$GroupResource = $Constants.Resources.Group
+
+Function Get-Assignment
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+        HelpMessage           = 'A run of the course',
+            Mandatory         = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object[]] $CourseRun
+    )
+
+    Process
+    {
+        ForEach ($CurrentCourseRun in $CourseRun)
+        {
+            $CurrentCourseRunId = $CurrentCourseRun.Id
+
+            $IdToMilestoneMap = $CurrentCourseRun | Get-Milestone | Get-IdMap
+            $IdToStudentMap = $CurrentCourseRun | Get-Group | Get-Student -Granted | Get-IdMap
+            $IdToProjectMap = $CurrentCourseRun | Get-Project | Get-IdMap
+
+            Invoke-RemoteApi -Resource $GroupResource -SubPath "/$CurrentCourseRunId/issues" -Attributes @{
+                labels = $Constants.CourseLabel.Name
+            } | ForEach-Object {
+                $Project = $IdToProjectMap[$_.project_id]
+                $Milestone = $IdToMilestoneMap[$_.milestone.id]
+                $Students = $IdToStudentMap[@($_.assignees.Id)]
+
+                $Definition = $_.title | Get-RequirenmentDefinition -Milestone $Milestone.Definition
+
+                [PSCustomObject]@{
+                    Id          = $_.iid
+                    Name        = $_.title
+                    State       = $_.state
+                    Deadline    = (Get-Date $_.due_date)
+                    Description = $_.description
+                    Url         = $_.web_url
+                    Grade       = $_.weight
+
+                    Definition  = $Definition
+
+                    Project     = $Project
+                    Milestone   = $Milestone
+                    Student     = $Students
+                }
+            }
+        }
+    }
+}
 
 Function Set-Assignment
 {
@@ -212,7 +265,6 @@ Function Remove-Assignment
     $StudentId = $Student.Id
     $StudentName = $Student.Name
     $ProjectId = $Project.Id
-    $ProjectName = $Project.FullName
 
     If (-not $Milestone)
     {

@@ -592,11 +592,12 @@ Function Get-Project
                 $Domain = $Match.Groups['domain'].Value | Get-DomainDefinition -Schema $Schema
                 $Area = $Match.Groups['area'].Value | Get-AreaDefinition -Domain $Domain
                 [PSCustomObject]@{
-                    Id = $_.id
-                    FullName = $_.name
+                    Id          = $_.id
+                    FullName    = $_.name
                     Description = $_.description
-                    Domain = $Domain
-                    Area = $Area
+                    Domain      = $Domain
+                    Area        = $Area
+                    CourseRun   = $CurrentCourseRun
                 }
             }
         }

@@ -211,7 +211,17 @@ Function Invoke-RemoteApi
             $Response = Invoke-WebRequest -Uri $Url @InvokeWebRequestParams
             $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
             $ResultList.Add($Result) | Out-Null
-            $Url = $Response.RelationLink['next']
+            $Url = If ($Response.RelationLink) {
+                $Response.RelationLink['next']
+            }
+            ElseIf ($Response.Headers['Link']) {
+                [System.Text.RegularExpressions.Regex] $NextLinkPattern = '<(?<link>[^>]+)>; rel="next"'
+                $NextLinkMatch = $NextLinkPattern.Match($Response.Headers['Link'])
+                If ($NextLinkMatch.Success)
+                {
+                    $NextLinkMatch.Groups['link'].Value
+                }
+            }
         } While ($Url)
 
         $ResultList | ForEach-Object {
@@ -712,4 +722,35 @@ Chacon и Ben Straub (см. ссылки ниже). Рекомендуется �
             "   - telegram: $($_.telegram)"
         }
     }) -join "`n")
+}
+
+Function Get-IdMap
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object[]] $Sequence
+    )
+
+    Begin
+    {
+        $Map = @{}
+    }
+
+    Process
+    {
+        ForEach ($Item in $Sequence)
+        {
+            $Map[$Item.Id] = $Item
+        }
+    }
+
+    End
+    {
+        Return $Map
+    }
 }

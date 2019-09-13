@@ -30,6 +30,7 @@ Export-ModuleMember -Function @(
     'Get-Project'
     'Sync-Project'
 
+    'Get-Assignment'
     'New-AssignmentMap'
     'Set-Assignment'
     'Remove-Assignment'
