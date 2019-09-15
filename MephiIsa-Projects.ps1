@@ -574,13 +574,49 @@ Function Get-Project
             Mandatory = $True,
             ValueFromPipeline = $True
         )]
-        [System.Object[]] $CourseRun
+        [System.Object[]] $CourseRun,
+
+        [Parameter(
+            ParameterSetName = 'teacher',
+            HelpMessage = 'A username of a teacher of projects',
+            Mandatory = $True
+        )]
+        [Alias('UserName')]
+        [System.Object[]] $Teacher,
+
+        [Parameter(
+            ParameterSetName = 'my',
+            HelpMessage = 'Show only my projects'
+        )]
+        [Switch] $My
     )
+
+    Begin
+    {
+        If ($My)
+        {
+            $MyName = (Invoke-RemoteApi -Resource $Constants.Resources.Me).username
+        }
+        If ($PSCmdlet.ParameterSetName -eq 'teacher')
+        {
+            $TeacherNames = $Teacher | ForEach-Object {
+                If ($_ -is [System.String])
+                {
+                    $_
+                }
+                Else
+                {
+                    $_.UserName
+                }
+            }
+        }
+    }
 
     Process
     {
         ForEach ($CurrentCourseRun in $CourseRun)
         {
+            $IdToTeacherMap = $CurrentCourseRun | Get-Teacher | Get-IdMap -Property 'UserName'
             $CurrentCourseRunId = $CurrentCourseRun.Id
             $Schema = $CurrentCourseRun | Get-Schema
             Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseRunId/projects" -Attributes @{
@@ -591,13 +627,28 @@ Function Get-Project
                 $Match = $ProjectNamePattern.Match($_.name)
                 $Domain = $Match.Groups['domain'].Value | Get-DomainDefinition -Schema $Schema
                 $Area = $Match.Groups['area'].Value | Get-AreaDefinition -Domain $Domain
+
                 [PSCustomObject]@{
                     Id          = $_.id
                     FullName    = $_.name
                     Description = $_.description
                     Domain      = $Domain
                     Area        = $Area
+
+                    WebUrl      = $_.web_url
+                    GitUrl      = $_.http_url_to_repo
+
+                    Teacher     = $IdToTeacherMap[$Domain.teacher]
+
                     CourseRun   = $CurrentCourseRun
+                }
+            } | Where-Object {
+                $Project = $_
+                Switch ($PSCmdlet.ParameterSetName)
+                {
+                    'all'     { $True }
+                    'teacher' { $Project.Domain.teacher -in $TeacherNames }
+                    'my'      { $Project.Domain.teacher -eq $MyName }
                 }
             }
         }

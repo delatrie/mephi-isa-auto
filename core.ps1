@@ -175,6 +175,9 @@ Function Invoke-RemoteApi
     $OriginalSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
     [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'
 
+    $OriginalProgressPreference = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+
     Try
     {
         $ContentFile = [System.IO.Path]::GetTempFileName()
@@ -246,6 +249,7 @@ Function Invoke-RemoteApi
             Remove-Item $ContentFile
         }
         [System.Net.ServicePointManager]::SecurityProtocol = $OriginalSecurityProtocol
+        $ProgressPreference = $OriginalProgressPreference
     }
 }
 
@@ -733,7 +737,12 @@ Function Get-IdMap
             Mandatory = $True,
             ValueFromPipeline = $True
         )]
-        [System.Object[]] $Sequence
+        [System.Object[]] $Sequence,
+
+        [Parameter(
+            HelpMessage = 'A name of the key property'
+        )]
+        [System.String] $Property = 'Id'
     )
 
     Begin
@@ -745,7 +754,7 @@ Function Get-IdMap
     {
         ForEach ($Item in $Sequence)
         {
-            $Map[$Item.Id] = $Item
+            $Map[$Item.$Property] = $Item
         }
     }
 

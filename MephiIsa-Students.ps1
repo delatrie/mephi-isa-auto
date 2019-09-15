@@ -69,7 +69,6 @@ Function Get-Student
                             UserName = $_.username
                             Name     = $_.Name
                             Access   = 'Granted'
-                            Email    = $Null
                         }
                     }
             } Catch {
@@ -85,7 +84,6 @@ Function Get-Student
                         UserName = $_.username
                         Name     = $_.Name
                         Access   = 'Pending'
-                        Email    = $Null
                     }
                 })
 
@@ -98,11 +96,6 @@ Function Get-Student
                     'UserName'  { $Student.UserName -eq $UserName }
                     'NameQuery' { $Student.Name -match $Name }
                 }
-            } | ForEach-Object {
-                $StudentId = $_.Id
-                $UserInfo  = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$StudentId"
-                $_.Email   = $UserInfo.public_email
-                Write-Output $_
             }
         }
     }

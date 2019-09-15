@@ -35,26 +35,24 @@ Function Get-Assignment
 
                 $Definition = $_.title | Get-RequirenmentDefinition -Milestone $Milestone.Definition
 
-                $State = Switch ($_.state) {
-                    'opened' { If ('Doing' -in $_.labels) { 'InProgress' } ElseIf ( 'To Do' -in $_.labels ) { 'Assigned' } Else { 'InQueue' } }
-                }
-
                 [PSCustomObject]@{
-                    Id          = $_.iid
-                    Name        = $_.title
-                    State       = $_.state
-                    Deadline    = (Get-Date $_.due_date)
-                    Description = $_.description
-                    Url         = $_.web_url
-                    Grade       = $_.weight
+                    Id           = $_.iid
+                    Name         = $_.title
+                    State        = $_.state
+                    Deadline     = (Get-Date $_.due_date)
+                    Description  = $_.description
+                    Url          = $_.web_url
+                    Grade        = $_.weight
 
-                    IsCurrent   = 'Doing' -in $_.labels
+                    IsInProgress = 'Doing' -in $_.labels
+                    IsScheduled  = 'To Do' -in $_.labels
+                    IsCompleted  = $_.state -eq 'closed'
 
-                    Definition  = $Definition
+                    Definition   = $Definition
 
-                    Project     = $Project
-                    Milestone   = $Milestone
-                    Student     = $Students
+                    Project      = $Project
+                    Milestone    = $Milestone
+                    Student      = $Students
                 }
             }
         }
