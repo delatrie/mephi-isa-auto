@@ -37,27 +37,40 @@
 
 Function Resolve-PersonalToken
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'My')]
     Param
     (
         [Parameter(
             HelpMessage = 'Do not request PAT from the user if it has not been found'
         )]
-        [Switch] $NoInput
+        [Switch] $NoInput,
+
+        [Parameter(
+            HelpMessage = 'A username of the person you wish to impersonate',
+            ParameterSetName = 'Impersonation',
+            Mandatory = $True
+        )]
+        [System.String] $OnBehalfOf
     )
 
-    $TokenFilePath = Get-PersonalTokenPath
+    $Arguments = If ($PSCmdlet.ParameterSetName -eq 'Impersonation') {
+        @{
+            OnBehalfOf = $OnBehalfOf
+        }
+    } Else { @{} }
+
+    $TokenFilePath = Get-PersonalTokenPath @Arguments
 
     If (Test-Path -PathType Leaf $TokenFilePath)
     {
         Write-Verbose "PAT has been found in [$TokenFilePath]"
-        $Token = Get-PersonalToken
+        $Token = Get-PersonalToken $TokenFilePath
     }
     ElseIf (-not $NoInput)
     {
         Write-Verbose "Missing PAT file [$TokenFilePath]. Requesting..."
-        $Token = Read-PersonalToken
-        Save-PersonalToken $Token
+        $Token = Read-PersonalToken @Arguments
+        Save-PersonalToken -Token $Token -Path $TokenFilePath
     }
     Else
     {
@@ -69,10 +82,24 @@ Function Resolve-PersonalToken
 
 Function Read-PersonalToken
 {
-    [CmdletBinding()]
-    Param()
+    [CmdletBinding(DefaultParameterSetName = 'My')]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A username of the person you wish to impersonate',
+            ParameterSetName = 'Impersonation',
+            Mandatory = $True
+        )]
+        [System.String] $OnBehalfOf
+    )
 
-    Read-Host -Prompt 'Please, create PAT and paste it here' -AsSecureString
+    $Prompt = If ($PSCmdlet.ParameterSetName -eq 'My') {
+        'Please, create PAT and paste it here'
+    } Else {
+        'Please, request PAT from $OnBehalfOf and paste it here'
+    }
+
+    Read-Host -Prompt $Prompt -AsSecureString
 }
 
 Function Save-PersonalToken
@@ -82,54 +109,97 @@ Function Save-PersonalToken
     (
         [Parameter(
             Mandatory = $True,
-            HelpMessage = 'Personal access token represented as a System.SecureString instance',
-            Position = 0
+            HelpMessage = 'Personal access token represented as a System.SecureString instance'
         )]
         [ValidateNotNull()]
-        [System.Security.SecureString] $Token
+        [System.Security.SecureString] $Token,
+
+        [Parameter(
+            Mandatory = $True,
+            HelpMessage = 'A path to save a token'
+        )]
+        [ValidateNotNullOrEmpty()]
+        [System.String] $Path
     )
 
     $TokenString = ConvertFrom-SecureString -SecureString $Token
-    $TokenFilePath = Get-PersonalTokenPath
 
-    $TokenFolderPath = [System.IO.Path]::GetDirectoryName($TokenFilePath)
+    $TokenFolderPath = [System.IO.Path]::GetDirectoryName($Path)
     If (-not (Test-Path -PathType Container -LiteralPath $TokenFolderPath))
     {
         New-Item -ItemType Directory -Path $TokenFolderPath | Out-Null
     }
 
-    Set-Content -Value $TokenString -LiteralPath $TokenFilePath -Encoding Ascii
-    Write-Verbose "PAT '$TokenString' has been saved in [$TokenFilePath]"
+    Set-Content -Value $TokenString -LiteralPath $Path -Encoding Ascii
+    Write-Verbose "PAT '$TokenString' has been saved in [$Path]"
 }
 
 Function Update-PersonalToken
 {
-    [CmdletBinding()]
-    Param()
+    [CmdletBinding(DefaultParameterSetName = 'My')]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A username of the person you wish to impersonate',
+            ParameterSetName = 'Impersonation',
+            Mandatory = $True
+        )]
+        [System.String] $OnBehalfOf
+    )
 
-    $Token = Read-PersonalToken
-    Save-PersonalToken $Token
+    $Arguments = If ($PSCmdlet.ParameterSetName -eq 'Impersonation') {
+        @{
+            OnBehalfOf = $OnBehalfOf
+        }
+    } Else { @{} }
+
+    $TokenFilePath = Get-PersonalTokenPath @Arguments
+
+    $Token = Read-PersonalToken @Arguments
+    Save-PersonalToken -Token $Token -Path $TokenFilePath
 }
 
 Function Get-PersonalToken
 {
     [CmdletBinding()]
-    Param()
+    Param
+    (
+        [Parameter(
+            Mandatory = $True,
+            HelpMessage = 'A path to read a token from'
+        )]
+        [ValidateNotNullOrEmpty()]
+        [System.String] $Path
+    )
 
-    $TokenFilePath = Get-PersonalTokenPath
-    $TokenString = Get-Content -LiteralPath $TokenFilePath -Encoding Ascii
+    $TokenString = Get-Content -LiteralPath $Path -Encoding Ascii
     ConvertTo-SecureString -String $TokenString
 }
 
 Function Get-PersonalTokenPath
 {
-    [CmdletBinding()]
-    Param()
+    [CmdletBinding(DefaultParameterSetName = 'My')]
+    Param
+    (
+        [Parameter(
+            HelpMessage = 'A username of the person you with to impersonate',
+            Mandatory = $True,
+            ParameterSetName = 'Impersonation'
+        )]
+        [ValidatePattern('^[\w\d\-]+$')]
+        [System.String] $OnBehalfOf
+    )
+
+    $FileName = If ($PSCmdlet.ParameterSetName -eq 'My') {
+        $Constants.PatFileName
+    } Else {
+        "$OnBehalfOf.pat"
+    }
 
     Return [System.IO.Path]::Combine(
         [System.Environment]::GetFolderPath('LocalApplicationData'),
         $Constants.AppName,
-        $Constants.PatFileName
+        $FileName
     )
 }
 
