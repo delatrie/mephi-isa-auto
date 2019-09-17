@@ -59,6 +59,22 @@ Function Get-Assignment
     }
 }
 
+Function Test-Assignment
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(
+        HelpMessage           = 'A run of the course',
+            Mandatory         = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object[]] $Assignment
+    )
+
+
+}
+
 Function Set-Assignment
 {
     [CmdletBinding()]

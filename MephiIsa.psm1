@@ -12,8 +12,11 @@ Param
 . "$PSScriptRoot\MephiIsa-Teachers.ps1"
 . "$PSScriptRoot\MephiIsa-Projects.ps1"
 . "$PSScriptRoot\MephiIsa-Assignments.ps1"
+. "$PSScriptRoot\MephiIsa-Interaction.ps1"
 
 Export-ModuleMember -Function @(
+    'Select-Item'
+
     'Update-PersonalToken'
     'Remove-PersonalToken'
 

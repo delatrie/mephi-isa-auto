@@ -11,5 +11,5 @@
     CmdletsToExport = ''
     VariablesToExport = ''
     AliasesToExport = ''
-    DefaultCommandPrefix = 'MephiIsa'
+    DefaultCommandPrefix = 'Mephi'
 }

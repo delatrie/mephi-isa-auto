@@ -585,8 +585,28 @@ Function Get-Project
         [System.Object[]] $Teacher,
 
         [Parameter(
+            ParameterSetName = 'name',
+            HelpMessage = 'A full name of the project',
+            Mandatory = $True
+        )]
+        [System.String[]] $Name,
+
+        [Parameter(
+            ParameterSetName = 'area',
+            HelpMessage = 'A domain of the project',
+            Mandatory = $True
+        )]
+        [System.String[]] $Domain,
+
+        [Parameter(
+            ParameterSetName = 'area',
+            HelpMessage = 'An automatization area of the project'
+        )]
+        [System.String[]] $Area = @(),
+
+        [Parameter(
             ParameterSetName = 'my',
-            HelpMessage = 'Show only my projects'
+            HelpMessage = 'Show only projects on your responsibility'
         )]
         [Switch] $My
     )
@@ -625,20 +645,20 @@ Function Get-Project
                 $_.name -match $ProjectNamePattern
             } | ForEach-Object {
                 $Match = $ProjectNamePattern.Match($_.name)
-                $Domain = $Match.Groups['domain'].Value | Get-DomainDefinition -Schema $Schema
-                $Area = $Match.Groups['area'].Value | Get-AreaDefinition -Domain $Domain
+                $ProjectDomain = $Match.Groups['domain'].Value | Get-DomainDefinition -Schema $Schema
+                $ProjectArea = $Match.Groups['area'].Value | Get-AreaDefinition -Domain $ProjectDomain
 
                 [PSCustomObject]@{
                     Id          = $_.id
                     FullName    = $_.name
                     Description = $_.description
-                    Domain      = $Domain
-                    Area        = $Area
+                    Domain      = $ProjectDomain
+                    Area        = $ProjectArea
 
                     WebUrl      = $_.web_url
                     GitUrl      = $_.http_url_to_repo
 
-                    Teacher     = $IdToTeacherMap[$Domain.teacher]
+                    Teacher     = $IdToTeacherMap[$ProjectDomain.teacher]
 
                     CourseRun   = $CurrentCourseRun
                 }
@@ -649,6 +669,8 @@ Function Get-Project
                     'all'     { $True }
                     'teacher' { $Project.Domain.teacher -in $TeacherNames }
                     'my'      { $Project.Domain.teacher -eq $MyName }
+                    'name'    { $Project.FullName -in $Name }
+                    'area'    { $Project.Domain.id -in $Domain -and (-not $Area -or $Project.Area.id -in $Area) }
                 }
             }
         }

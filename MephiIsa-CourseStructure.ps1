@@ -205,6 +205,10 @@ Function Get-CourseRun
     {
         ForEach($CurrentCourse in $Course)
         {
+            If ($CurrentCourse -is [System.String])
+            {
+                $CurrentCourse = $CurrentCourse | Get-Course
+            }
             $CurrentCourseId = $CurrentCourse.Id
             Invoke-RemoteApi -Resource $Constants.Resources.Group -SubPath "/$CurrentCourseId/subgroups" |
                 Where-Object {

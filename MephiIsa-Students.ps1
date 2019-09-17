@@ -10,6 +10,7 @@ Function Get-Student
             Mandatory         = $True,
             ValueFromPipeline = $True
         )]
+        [ValidateNotNullOrEmpty()]
         [System.Object[]] $Group,
 
         [Parameter(

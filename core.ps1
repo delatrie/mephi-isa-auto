@@ -239,87 +239,95 @@ Function Invoke-RemoteApi
             HelpMessage = 'A body of the request'
         )]
         [ValidateNotNull()]
-        [System.Collections.Hashtable] $Body = @{}
+        [System.Collections.Hashtable] $Body = @{},
+
+        [Parameter(
+            HelpMessage = 'A username of the person you wish to impersonate'
+        )]
+        [System.String] $OnBehalfOf = $Null
     )
 
-    $OriginalSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
-    [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'
-
-    $OriginalProgressPreference = $ProgressPreference
-    $ProgressPreference = 'SilentlyContinue'
-
-    Try
+    Process
     {
-        $ContentFile = [System.IO.Path]::GetTempFileName()
-        $Query = ($Attributes.Keys | ForEach-Object {
-            "$([System.Net.WebUtility]::UrlEncode($_))=$([System.Net.WebUtility]::UrlEncode($Attributes[$_]))"
-        }) -join '&'
-        $QueryString = If ($Query) { "?$Query" } Else { '' }
-        $Url = "$($Constants.BaseUrl)$($Constants.ApiPath)/$($Constants.ApiVersion)/${Resource}${SubPath}$QueryString"
-        $Token = Resolve-PersonalToken
+        $OriginalSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
+        [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'
 
-        $PlainToken = [System.Management.Automation.PSCredential]::new('unused', $Token).GetNetworkCredential().Password
+        $OriginalProgressPreference = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
 
-        $InvokeWebRequestParams = @{
-            Method  = $PSCmdlet.ParameterSetName
-            Headers = @{
-                'Accept'         = 'application/json'
-                'Accept-Charset' = 'utf-8'
-                'Authorization'  = "Bearer $PlainToken"
-            }
-            ContentType = 'application/json; charset=UTF-8'
-            OutFile     = $ContentFile
-            PassThru    = $True
-        }
-
-        If ($Post -or $Put)
+        Try
         {
-            $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
-        }
-
-        $ResultList = [System.Collections.ArrayList]::new()
-
-        Do
-        {
-            $Response = Invoke-WebRequest -Uri $Url @InvokeWebRequestParams
-            $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
-            $ResultList.Add($Result) | Out-Null
-            $Url = If ($Response.RelationLink) {
-                $Response.RelationLink['next']
-            }
-            ElseIf ($Response.Headers['Link']) {
-                [System.Text.RegularExpressions.Regex] $NextLinkPattern = '<(?<link>[^>]+)>; rel="next"'
-                $NextLinkMatch = $NextLinkPattern.Match($Response.Headers['Link'])
-                If ($NextLinkMatch.Success)
-                {
-                    $NextLinkMatch.Groups['link'].Value
-                }
-            }
-        } While ($Url)
-
-        $ResultList | ForEach-Object {
-            $Result = $_
-            If ($Result -is [System.Array])
+            $ContentFile = [System.IO.Path]::GetTempFileName()
+            $Query = ($Attributes.Keys | ForEach-Object {
+                "$([System.Net.WebUtility]::UrlEncode($_))=$([System.Net.WebUtility]::UrlEncode($Attributes[$_]))"
+            }) -join '&'
+            $QueryString = If ($Query) { "?$Query" } Else { '' }
+            $Url = "$($Constants.BaseUrl)$($Constants.ApiPath)/$($Constants.ApiVersion)/${Resource}${SubPath}$QueryString"
+            $ResolveTokenArgs = @{}
+            If ($OnBehalfOf)
             {
-                For ($i = 0; $i -lt $Result.Length; $i++)
-                {
-                    $Result[$i]
+                $ResolveTokenArgs['OnBehalfOf'] = $OnBehalfOf
+            }
+            $Token = Resolve-PersonalToken @ResolveTokenArgs
+
+            $PlainToken = [System.Management.Automation.PSCredential]::new('unused', $Token).GetNetworkCredential().Password
+
+            $InvokeWebRequestParams = @{
+                Method  = $PSCmdlet.ParameterSetName
+                Headers = @{
+                    'Accept'         = 'application/json'
+                    'Accept-Charset' = 'utf-8'
+                    'Authorization'  = "Bearer $PlainToken"
                 }
+                ContentType = 'application/json; charset=UTF-8'
+                OutFile     = $ContentFile
+                PassThru    = $True
             }
-            Else
+
+            If ($Post -or $Put)
             {
-                $Result
+                $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
             }
+
+            Do
+            {
+                $Response = Invoke-WebRequest -Uri $Url @InvokeWebRequestParams
+                $Result = Get-Content -LiteralPath $ContentFile -Encoding UTF8 -Raw | ConvertFrom-Json
+
+                If ($Result -is [System.Array])
+                {
+                    For ($i = 0; $i -lt $Result.Length; $i++)
+                    {
+                        Write-Output $Result[$i]
+                    }
+                }
+                Else
+                {
+                    Write-Output $Result
+                }
+
+                $Url = If ($Response.RelationLink) {
+                    $Response.RelationLink['next']
+                }
+                ElseIf ($Response.Headers['Link']) {
+                    [System.Text.RegularExpressions.Regex] $NextLinkPattern = '<(?<link>[^>]+)>; rel="next"'
+                    $NextLinkMatch = $NextLinkPattern.Match($Response.Headers['Link'])
+                    If ($NextLinkMatch.Success)
+                    {
+                        $NextLinkMatch.Groups['link'].Value
+                    }
+                }
+            } While ($Url)
         }
-    }
-    Finally
-    {
-        If (Test-Path -PathType Leaf $ContentFile)
+        Finally
         {
-            Remove-Item $ContentFile
+            If (Test-Path -PathType Leaf $ContentFile)
+            {
+                Remove-Item $ContentFile
+            }
+            [System.Net.ServicePointManager]::SecurityProtocol = $OriginalSecurityProtocol
+            $ProgressPreference = $OriginalProgressPreference
         }
-        [System.Net.ServicePointManager]::SecurityProtocol = $OriginalSecurityProtocol
-        $ProgressPreference = $OriginalProgressPreference
     }
 }
 
@@ -785,10 +793,10 @@ Chacon и Ben Straub (см. ссылки ниже). Рекомендуется �
 Ниже перечислены контакты преподавателей
 
 "@ + (($Schema.teachers | ForEach-Object {
-        $i = 0
+        $script:i = 0
     } {
-        $i++
-        "$i. $($_.name)"
+        $script:i++
+        "$script:i. $($_.name)"
         "   - email: $($_.email)"
         "   - gitlab: @$($_.id)"
         If ($_.telegram)
