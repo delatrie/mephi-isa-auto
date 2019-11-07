@@ -244,9 +244,9 @@ Function New-AssignmentMap
             Student = $s
             Project = $p
         }
-        $Projects = $Projects | Where-Object {
+        $Projects = @($Projects | Where-Object {
             $_.Id -ne $p.Id
-        }
+        })
     }
 }
 
