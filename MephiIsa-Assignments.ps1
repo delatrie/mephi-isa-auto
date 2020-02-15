@@ -77,7 +77,9 @@ Function Test-Assignment
 
 Function Set-Assignment
 {
-    [CmdletBinding()]
+    [CmdletBinding(
+        DefaultParameterSetName = 'Explicit'
+    )]
     Param
     (
         [Parameter(
@@ -88,15 +90,25 @@ Function Set-Assignment
 
         [Parameter(
             HelpMessage = 'A student',
+            ParameterSetName = 'Explicit',
             Mandatory = $True
         )]
         [System.Object] $Student,
 
         [Parameter(
             HelpMessage = 'A project',
+            ParameterSetName = 'Explicit',
             Mandatory = $True
         )]
         [System.Object] $Project,
+
+        [Parameter(
+            HelpMessage = 'An assignment map created with New-AssignmentMap',
+            ParameterSetName = 'Map',
+            Mandatory = $True,
+            ValueFromPipeline = $True
+        )]
+        [System.Object[]] $Map,
 
         [Parameter(
             HelpMessage = 'A milestone to assign the student. Defaults to the current milestone of the run'
@@ -104,115 +116,138 @@ Function Set-Assignment
         [System.Object] $Milestone = $Null
     )
 
-    $ProjectId = $Project.Id
-    $StudentId = $Student.Id
-    $StudentName = $Student.Name
-
-    $Schema = Get-Schema -CourseRun $CourseRun
-    $Finish = Get-Date $Schema.end
-
-    $AccessLevel = $Constants.AccessLevels.Maintainer
-
-    If (-not $Milestone)
+    Begin
     {
-        $Milestone = Get-Milestone -CourseRun $CourseRun -Current
-        $MilestoneName = $Milestone.Definition.name
-        Write-Verbose "Current milestone '$MilestoneName' selected as the default one"
-    }
-
-    $Status = 'Unaffected'
-
-    $Member = Invoke-RemoteApi -Resource $ProjectResource -SubPath "/$ProjectId/members" |
-        Where-Object {
-            $_.id -eq $StudentId
-        }
-
-    If (-not $Member)
-    {
-        Invoke-RemoteApi -Post -Resource $ProjectResource -SubPath "/$ProjectId/members" -Body @{
-            user_id = $StudentId
-            access_level = $AccessLevel
-            expires_at = Get-Date $Finish -Format 'yyyy-MM-dd'
-        } | ForEach-Object {
-            Write-Verbose "Student '$StudentName' has been assigned to the project '$($Project.FullName)'"
-        }
-        $Status = 'Created'
-    }
-    ElseIf ($Member.access_level -ne $AccessLevel)
-    {
-        Write-Warning "Student '$StudentName' is assigned to the project '$($Project.FullName)' with the access level $($Member.access_level). Access level $AccessLevel was expected"
-        Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/members/$($Member.id)" -Body @{
-            access_level = $AccessLevel
-        } | ForEach-Object {
-            Write-Verbose "Access level of the student '$StudentName' as a member of '$($Project.FullName)' has been corrected to be $($_.access_level)"
-        }
-        $Status = 'Corrected'
-    }
-    Else
-    {
-        $CorrectBody = @{}
-        If ($Member.access_level -ne $AccessLevel)
+        If ($PSCmdlet.ParameterSetName -eq 'Explicit')
         {
-            Write-Warning "Student '$StudentName' is assigned to the project '$($Project.FullName)' with the access level $($Member.access_level). Access level $AccessLevel was expected"
-            $CorrectBody['access_level'] = $AccessLevel
-        }
-
-        $ActualFinish = Get-Date $Member.expires_at
-        If ($ActualFinish -ne $Finish)
-        {
-            Write-Warning "Access of the student '$StudentName' to the project '$($Project.FullName)' expires at $ActualFinish. Expiration date of $Finish was expected"
-            $CorrectBody['expires_at'] = $Finish
-        }
-
-        If ($CorrectBody.Count -gt 0)
-        {
-            Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/members/$($Member.id)" -Body @{
-                access_level = $AccessLevel
-            } | ForEach-Object {
-                Write-Verbose "Access of the student '$StudentName' as a member of '$($Project.FullName)' has been corrected"
+            $Map = [PSCustomObject]@{
+                Student = $Student
+                Project = $Project
             }
-            $Status = 'Corrected'
         }
-        Else
+
+        $Schema = Get-Schema -CourseRun $CourseRun
+        $Finish = Get-Date $Schema.end
+
+        $AccessLevel = $Constants.AccessLevels.Maintainer
+
+        If (-not $Milestone)
         {
-            Write-Verbose "$($Member.Name) already has correct access to the project $($Project.FullName)"
+            $Milestone = Get-Milestone -CourseRun $CourseRun -Current
+            $MilestoneName = $Milestone.Definition.name
+            Write-Verbose "Current milestone '$MilestoneName' selected as the default one"
         }
     }
 
-    Invoke-RemoteApi -Resource $ProjectResource -SubPath "/$ProjectId/issues" -Attributes @{
-        labels = $Constants.CourseLabel.Name
-    } | Where-Object {
-        $_.milestone.id -eq $Milestone.Id
-    } | ForEach-Object {
-        $ExistingAssignee = $_.assignees | Where-Object {
-            $_.id -eq $StudentId
-        }
-        If (-not $ExistingAssignee)
+    Process
+    {
+        ForEach ($Pair in $Map)
         {
-            $AssigneeIds = @($_.assignees | ForEach-Object {} { $_.id } { $StudentId })
-            Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/issues/$($_.iid)" -Body @{
-                assignee_ids = $AssigneeIds
-            } | ForEach-Object {
-                Write-Verbose "Student '$StudentName' has been assigned to the requirenment '$($_.title)' of the project '$($Project.FullName)'"
-            }
+            $Student = $Pair.Student
+            $Project = $Pair.Project
 
-            If ($Status -eq 'Unaffected')
+            $ProjectId = $Project.Id
+            $StudentId = $Student.Id
+            $StudentName = $Student.Name
+            $Status = 'Unaffected'
+
+            $Member = Invoke-RemoteApi -Resource $ProjectResource -SubPath "/$ProjectId/members" |
+                Where-Object {
+                    $_.id -eq $StudentId
+                }
+            If (-not $Member)
             {
-                $Status = 'Created'
+                Invoke-RemoteApi -Post -Resource $ProjectResource -SubPath "/$ProjectId/members" -Body @{
+                    user_id = $StudentId
+                    access_level = $AccessLevel
+                    expires_at = Get-Date $Finish -Format 'yyyy-MM-dd'
+                } | ForEach-Object {
+                    Write-Verbose "Student '$StudentName' has been assigned to the project '$($Project.FullName)'"
+                }
+                $Status = 'Assigned'
             }
-        }
-        Else
-        {
-            Write-Verbose "Student '$($Student.Name)' has already been assigned to the requirenment '$($_.title)' of the project '$($Project.FullName)'"
+            ElseIf ($Member.access_level -ne $AccessLevel)
+            {
+                Write-Warning "Student '$StudentName' is assigned to the project '$($Project.FullName)' with the access level $($Member.access_level). Access level $AccessLevel was expected"
+                Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/members/$($Member.id)" -Body @{
+                    access_level = $AccessLevel
+                } | ForEach-Object {
+                    Write-Verbose "Access level of the student '$StudentName' as a member of '$($Project.FullName)' has been corrected to be $($_.access_level)"
+                }
+                $Status = 'Corrected'
+            }
+            Else
+            {
+                $CorrectBody = @{}
+                If ($Member.access_level -ne $AccessLevel)
+                {
+                    Write-Warning "Student '$StudentName' is assigned to the project '$($Project.FullName)' with the access level $($Member.access_level). Access level $AccessLevel was expected"
+                    $CorrectBody['access_level'] = $AccessLevel
+                }
+
+                $ActualFinish = Get-Date $Member.expires_at
+                If ($ActualFinish -ne $Finish)
+                {
+                    Write-Warning "Access of the student '$StudentName' to the project '$($Project.FullName)' expires at $ActualFinish. Expiration date of $Finish was expected"
+                    $CorrectBody['expires_at'] = $Finish
+                }
+
+                If ($CorrectBody.Count -gt 0)
+                {
+                    Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/members/$($Member.id)" -Body @{
+                        access_level = $AccessLevel
+                    } | ForEach-Object {
+                        Write-Verbose "Access of the student '$StudentName' as a member of '$($Project.FullName)' has been corrected"
+                    }
+                    $Status = 'Corrected'
+                }
+                Else
+                {
+                    Write-Verbose "$($Member.Name) already has correct access to the project $($Project.FullName)"
+                }
+            }
+
+            Invoke-RemoteApi -Resource $ProjectResource -SubPath "/$ProjectId/issues" -Attributes @{
+                labels = $Constants.CourseLabel.Name
+            } | Where-Object {
+                $_.milestone.id -eq $Milestone.Id
+            } | ForEach-Object {
+                $ExistingAssignee = $_.assignees | Where-Object {
+                    $_.id -eq $StudentId
+                }
+                If (-not $ExistingAssignee)
+                {
+                    $AssigneeIds = @($_.assignees | ForEach-Object {} { $_.id } { $StudentId })
+                    Invoke-RemoteApi -Put -Resource $ProjectResource -SubPath "/$ProjectId/issues/$($_.iid)" -Body @{
+                        assignee_ids = $AssigneeIds
+                    } | ForEach-Object {
+                        Write-Verbose "Student '$StudentName' has been assigned to the requirenment '$($_.title)' of the project '$($Project.FullName)'"
+                    }
+
+                    If ($Status -eq 'Unaffected')
+                    {
+                        $Status = 'Assigned'
+                    }
+                }
+                Else
+                {
+                    Write-Verbose "Student '$($Student.Name)' has already been assigned to the requirenment '$($_.title)' of the project '$($Project.FullName)'"
+                }
+            }
+
+            [PSCustomObject]@{
+                Student = $Student.Name
+                Project = $Project.FullName
+                Status  = $Status
+                Level   = $Constants.AccessLevels.Maintainer
+                Finish  = $Finish
+            }
         }
     }
 
-    [PSCustomObject]@{
-        Student = $Student.Name
-        Project = $Project.FullName
-        Status  = $Status
-        Level   = $Constants.AccessLevels.Maintainer
-        Finish  = $Finish
+    End
+    {
+
     }
 }
 
@@ -244,9 +279,9 @@ Function New-AssignmentMap
             Student = $s
             Project = $p
         }
-        $Projects = $Projects | Where-Object {
+        $Projects = @($Projects | Where-Object {
             $_.Id -ne $p.Id
-        }
+        })
     }
 }
 

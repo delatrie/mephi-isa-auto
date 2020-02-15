@@ -17,7 +17,13 @@ $Degrees = [ordered] @{
 $DegreePattern = ($Degrees.Keys | ForEach-Object {
     [System.Text.RegularExpressions.Regex]::Escape($_)
 }) -join '|'
-[System.Text.RegularExpressions.Regex] $GroupNamePattern = "^(?<level>$DegreePattern)(?<year>\d\d)-(?<number>\d+)$"
+$Flags = [ordered] @{
+    'V' = 'Evening'
+}
+$FlagsPattern = @($Flags.Keys | ForEach-Object {
+    [System.Text.RegularExpressions.Regex]::Escape($_)
+}) -join '|'
+[System.Text.RegularExpressions.Regex] $GroupNamePattern = "^(?<level>$DegreePattern)(?<year>\d\d)-(?<flag>$FlagsPattern)?(?<number>\d+)$"
 
 Function Get-Course
 {
@@ -413,9 +419,9 @@ Function Get-Group
     (
         [Parameter(
             HelpMessage = 'A course run',
-            ValueFromPipeline = $True
+            ValueFromPipeline = $True,
+            Mandatory = $True
         )]
-        [ValidateNotNull()]
         [System.Object[]] $CourseRun,
 
         [Parameter(
@@ -436,7 +442,13 @@ Function Get-Group
             HelpMessage = 'A number of the group',
             ParameterSetName = 'Query'
         )]
-        [System.Int32] $Number
+        [System.Int32] $Number,
+
+        [Parameter(
+            HelpMessage = 'The group has evening form of education',
+            ParameterSetName = 'Query'
+        )]
+        [Switch] $Evening
     )
 
     DynamicParam
@@ -471,6 +483,7 @@ Function Get-Group
         $HasDegree = $PSBoundParameters.ContainsKey('Degree')
         $HasYear = $PSBoundParameters.ContainsKey('Year')
         $HasNumber = $PSBoundParameters.ContainsKey('Number')
+        $HasEvening = $PSBoundParameters.ContainsKey('Evening')
 
         If ($HasDegree)
         {
@@ -492,6 +505,9 @@ Function Get-Group
                     $CurrentGroupDegreeKey = $Match.Groups['level'].Value
                     [System.Int32] $CurrentGroupYearShort = $Match.Groups['year'].Value
                     $CurrentGroupYear = 2000 + $CurrentGroupYearShort
+                    [bool] $CurrentGroupHasFlag = $Match.Groups['flag'].Success
+                    $CurrentGroupFlag = $Match.Groups['flag'].Success
+
                     [System.Int32] $CurrentGroupNumber = $Match.Groups['number'].Value
 
                     [PSCustomObject]@{
@@ -501,6 +517,7 @@ Function Get-Group
                         Year = $CurrentGroupYear
                         Number = $CurrentGroupNumber
                         Description = $_.description
+                        IsEvening = $CurrentGroupHasFlag -and $CurrentGroupFlag -eq 'V'
                     }
                 } | Where-Object {
                     $Group = $_
@@ -508,7 +525,22 @@ Function Get-Group
                     {
                         'All' { $True }
                         'Single' { $Group.FullName -eq $Name }
-                        'Query' { (-not $HasDegree -or $Group.Degree -eq $Degree ) -and (-not $HasYear -or $Group.Year -eq $Year) -and (-not $HasNumber -or $Group.Number -eq $Number) }
+                        'Query'
+                        {
+                            (
+                                -not $HasDegree -or
+                                    $Group.Degree -eq $Degree
+                            ) -and (
+                                -not $HasYear -or
+                                    $Group.Year -eq $Year
+                            ) -and (
+                                -not $HasNumber -or
+                                    $Group.Number -eq $Number
+                            ) -and (
+                                -not $HasEvening -or
+                                    $Group.IsEvening -eq $Evening
+                            )
+                        }
                     }
                 }
         }

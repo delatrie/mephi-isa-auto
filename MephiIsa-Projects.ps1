@@ -260,14 +260,15 @@ Function Sync-Project
 
                                         # Weights are disabled for issues of a private project in the free tier
                                         # of Gitlab. Once a project visibility changed to public issue weights
-                                        # are requird to be set again.
+                                        # are required to be set again.
                                         If ($ProjectDefinition.Visibility -eq 'public')
                                         {
                                             $AllRequirenments = $Milestones | ForEach-Object {
                                                 $_.Definition.requirenments
                                             }
+
                                             $CreatedIssues | ForEach-Object {
-                                                $IssueId = $_.id
+                                                $IssueId = $_.iid
                                                 $IssueName = $_.title
                                                 $IssueDefinition = $AllRequirenments | Where-Object {
                                                     $_.name -eq $IssueName
@@ -282,10 +283,22 @@ Function Sync-Project
                                     }
 
                                     [PSCustomObject]@{
-                                        Status    = 'Created'
-                                        FullName  = $_.title
-                                        Url       = $_.web_url
+                                        Problems    = 0
+                                        Corrections = 0
+                                        Status      = 'OK'
+                                        FullName    = $_.title
+                                        Url         = $_.web_url
                                     }
+                                }
+                            }
+                            Else
+                            {
+                                [PSCustomObject]@{
+                                    Problems    = 1
+                                    Corrections = 0
+                                    Status      = 'Missing'
+                                    FullName    = $FullName
+                                    Url         = $Null
                                 }
                             }
                         }
@@ -479,81 +492,108 @@ Function Sync-Project
                                 }
                             }
                             $OutputResult = [PSCustomObject]@{
-                                Status    = 'Validated'
-                                FullName  = $ActualProject.FullName
-                                Url       = $ActualProject.Url
+                                Problems    = 0
+                                Corrections = 0
+                                Status      = $Null
+                                FullName    = $ActualProject.FullName
+                                Url         = $ActualProject.Url
                             }
-                            If (-not $CheckOnly -and $MissingGroups -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to share the project with the groups?", "The project '$FullName' sharing with '$($MissingGroups.FullName)'", [ref] $Force, [ref] $CheckOnly)))
+
+                            if ($MissingGroups)
                             {
-                                $MissingGroups | ForEach-Object {
-                                    Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/share" -Body @{
-                                        group_id = $_.Id
-                                        group_access = $Constants.AccessLevels.Guest
-                                    } | ForEach-Object {
-                                        Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
+                                $OutputResult.Problems += $MissingGroups.Count
+                                If (-not $CheckOnly -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to share the project with the groups?", "The project '$FullName' sharing with '$($MissingGroups.FullName)'", [ref] $Force, [ref] $CheckOnly)))
+                                {
+                                    $MissingGroups | ForEach-Object {
+                                        Invoke-RemoteApi -Post -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/share" -Body @{
+                                            group_id = $_.Id
+                                            group_access = $Constants.AccessLevels.Guest
+                                        } | ForEach-Object {
+                                            Write-Verbose "The project '$($ActualProject.FullName)' has been shared with the group $($_.group_name)"
+                                            $OutputResult.Corrections++
+                                        }
                                     }
                                 }
-                                $OutputResult.Operation = 'Corrected'
                             }
-                            If (-not $CheckOnly -and $RequirenmentSync.Count -gt 0 -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct $($RequirenmentSync.Count) issues?", "The project '$FullName' issues correction", [ref] $Force, [ref] $CheckOnly)))
+
+                            If ($RequirenmentSync.Count -gt 0)
                             {
-                                $RequirenmentSync | ForEach-Object {
-                                    $Sync = $_
-                                    Switch ($_.Action)
+                                $OutputResult.Problems += $RequirenmentSync.Count
+                                If (-not $CheckOnly -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct $($RequirenmentSync.Count) issues?", "The project '$FullName' issues correction", [ref] $Force, [ref] $CheckOnly)))
+                                {
+                                    $RequirenmentSync | ForEach-Object {
+                                        $Sync = $_
+                                        Switch ($_.Action)
+                                        {
+                                            'Create'
+                                            {
+                                                $DefinedTask = $Sync.Reference
+                                                $Milestone = $DefinedTask.Milestone
+                                                $RequirenmentDefinition = $DefinedTask.Name | Get-RequirenmentDefinition -Milestone $Milestone.Definition
+                                                New-Issue -Course $Schema -Project $ActualProject -Milestone $Milestone -Requirenment $RequirenmentDefinition |
+                                                    ForEach-Object {
+                                                        Write-Verbose "Issue $($_.iid) ($($DefinedTask.Name)) has been created in the project #$($ActualProject.Id)"
+                                                        $OutputResult.Corrections++
+                                                    }
+                                            }
+
+                                            'Delete'
+                                            {
+                                                $Id = $Sync.Id
+                                                Invoke-RemoteApi -Delete -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/issues/$Id" -ErrorVariable CorrectionError
+                                                Write-Verbose "Issue $Id deleted from the project #$($ActualProject.Id)"
+                                                If (-not $CorrectionError)
+                                                {
+                                                    $OutputResult.Corrections++
+                                                }
+                                            }
+
+                                            'Update'
+                                            {
+                                                $Id = $Sync.Id
+                                                $Body = $Sync.Body
+                                                Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/issues/$Id" -Body $Body |
+                                                    ForEach-Object {
+                                                        Write-Verbose "Issue $Id of the project #$($ActualProject.Id) has been corrected"
+                                                        $OutputResult.Corrections++
+                                                    }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            If ($Readme -ne $ActualReadme)
+                            {
+                                $OutputResult.Problems += $RequirenmentSync.Count
+                                If (-not $CheckOnly -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct README.md?", "The project '$FullName' README.md correction", [ref] $Force, [ref] $CheckOnly)))
+                                {
+                                    $Path = [System.Net.WebUtility]::UrlEncode('README.md')
+                                    While (-not $CommitEmail)
                                     {
-                                        'Create'
-                                        {
-                                            $DefinedTask = $Sync.Reference
-                                            $Milestone = $DefinedTask.Milestone
-                                            $RequirenmentDefinition = $DefinedTask.Name | Get-RequirenmentDefinition -Milestone $Milestone.Definition
-                                            New-Issue -Course $Schema -Project $ActualProject -Milestone $Milestone -Requirenment $RequirenmentDefinition |
-                                                ForEach-Object {
-                                                    Write-Verbose "Issue $($_.iid) ($($DefinedTask.Name)) has been created in the project #$($ActualProject.Id)"
-                                                }
-                                        }
-
-                                        'Delete'
-                                        {
-                                            $Id = $Sync.Id
-                                            Invoke-RemoteApi -Delete -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/issues/$Id"
-                                            Write-Verbose "Issue $Id deleted from the project #$($ActualProject.Id)"
-                                        }
-
-                                        'Update'
-                                        {
-                                            $Id = $Sync.Id
-                                            $Body = $Sync.Body
-                                            Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/issues/$Id" -Body $Body |
-                                                ForEach-Object {
-                                                    Write-Verbose "Issue $Id of the project #$($ActualProject.Id) has been corrected"
-                                                }
-                                        }
+                                        $CommitEmail = Read-Host -Prompt 'A README.md of the existing project is being updated and an email is required to commit the file. Please, enter your commit email here'
+                                    }
+                                    While (-not $CommitName)
+                                    {
+                                        $CommitName = Read-Host -Prompt 'Please, enter your commit name here'
+                                    }
+                                    Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/repository/files/$Path" -Body @{
+                                        branch = 'master'
+                                        author_email = $CommitEmail
+                                        author_name = $CommitName
+                                        content = $Readme
+                                        commit_message = 'Update README.md'
+                                    } | ForEach-Object {
+                                        Write-Verbose "README.md of $($ActualProject.FullName) has been updated"
+                                        $OutputResult.Corrections++
                                     }
                                 }
-                                $OutputResult.Operation = 'Corrected'
                             }
 
-                            If (-not $CheckOnly -and $Readme -ne $ActualReadme -and ($Force -or $PSCmdlet.ShouldContinue("Do you wish to correct README.md?", "The project '$FullName' README.md correction", [ref] $Force, [ref] $CheckOnly)))
-                            {
-                                $Path = [System.Net.WebUtility]::UrlEncode('README.md')
-                                While (-not $CommitEmail)
-                                {
-                                    $CommitEmail = Read-Host -Prompt 'A README.md of the existing project is being updated and an email is required to commit the file. Please, enter your commit email here'
-                                }
-                                While (-not $CommitName)
-                                {
-                                    $CommitName = Read-Host -Prompt 'Please, enter your commit name here'
-                                }
-                                Invoke-RemoteApi -Put -Resource $Constants.Resources.Project -SubPath "/$($ActualProject.Id)/repository/files/$Path" -Body @{
-                                    branch = 'master'
-                                    author_email = $CommitEmail
-                                    author_name = $CommitName
-                                    content = $Readme
-                                    commit_message = 'Update README.md'
-                                } | ForEach-Object {
-                                    Write-Verbose "README.md of $($ActualProject.FullName) has been updated"
-                                }
-                                $OutputResult.Operation = 'Corrected'
+                            $OutputResult.Status = If ($OutputResult.Problems -eq $OutputResult.Corrections) {
+                                'OK'
+                            } Else {
+                                'OutOfSync'
                             }
 
                             Write-Output $OutputResult

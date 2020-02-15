@@ -47,7 +47,12 @@ Function Get-Student
             Position         = 0
         )]
         [ValidateNotNullOrEmpty()]
-        [System.String] $Name
+        [System.String] $Name,
+
+        [Parameter(
+            HelpMessage = 'Include a public email into a user object'
+        )]
+        [Switch] $IncludeEmail
     )
 
     Process
@@ -88,7 +93,14 @@ Function Get-Student
                     }
                 })
 
-            ($GroupUsers + $GroupAccessRequests) | Where-Object {
+            ($GroupUsers + $GroupAccessRequests) | ForEach-Object {
+                If ($IncludeEmail) {
+                    $UserData = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$($_.Id)"
+                    $_ | Add-Member -MemberType NoteProperty -Name 'Email' -Value $UserData.public_email
+                }
+
+                $_
+            } | Where-Object {
                 $Student = $_
                 Switch ($PSCmdlet.ParameterSetName)
                 {

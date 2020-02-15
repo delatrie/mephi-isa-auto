@@ -287,6 +287,7 @@ Function Invoke-RemoteApi
             If ($Post -or $Put)
             {
                 $InvokeWebRequestParams['Body'] = $Body | ConvertTo-Json -Depth 20 -Compress
+                Write-Verbose $Body
             }
 
             Do
@@ -732,7 +733,7 @@ Function Get-ProjectReadme
 Добро пожаловать в репозиторий для варианта '$($Domain.id).$($Area.id)' по лабораторному практикуму "$($Schema.name)" $Year.
 
 # Преподаватель
-Каждый вартант закреплен за своим преподавателем.
+Каждый вариант закреплен за своим преподавателем.
 Преподаватель для этого варианта: $($Teacher.name) (см. контакты ниже).
 
 # Описание задания
