@@ -92,7 +92,6 @@ Function Get-Student
                         Access   = 'Pending'
                     }
                 })
-
             ($GroupUsers + $GroupAccessRequests) | ForEach-Object {
                 If ($IncludeEmail) {
                     $UserData = Invoke-RemoteApi -Resource $Constants.Resources.User -SubPath "/$($_.Id)"

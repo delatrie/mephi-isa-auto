@@ -302,7 +302,7 @@ Function Invoke-RemoteApi
                         Write-Output $Result[$i]
                     }
                 }
-                Else
+                ElseIf ($Result)
                 {
                     Write-Output $Result
                 }

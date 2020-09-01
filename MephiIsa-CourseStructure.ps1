@@ -190,7 +190,7 @@ Function Get-CourseRun
 
         If ($HasSemester)
         {
-            $Semester = $PSBoundParameters.Semester
+            $SelectedSemester = $PSBoundParameters.Semester
         }
 
         If ($Current)
@@ -203,7 +203,7 @@ Function Get-CourseRun
             $CurrentSemester = $SemesterMonths.Keys | Where-Object {
                 $CurrentMonth -in $SemesterMonths[$_]
             }
-            $Semester = $CurrentSemester
+            $SelectedSemester = $CurrentSemester
         }
     }
 
@@ -235,7 +235,13 @@ Function Get-CourseRun
                         Description = $_.description
                     }
                 } | Where-Object {
-                    $PSCmdlet.ParameterSetName -eq 'All' -or ((-not $HasYear -or $_.Year -eq $Year) -and (-not $HasSemester -or $_.Semester -eq $Semester))
+                    $PSCmdlet.ParameterSetName -eq 'All' -or (
+                        (
+                            -not $HasYear -or $_.Year -eq $Year
+                        ) -and (
+                            -not $HasSemester -or $_.Semester -eq $SelectedSemester
+                        )
+                    )
                 } | Sort-Object Year, { $Semesters.IndexOf($_.Semester) }
         }
     }

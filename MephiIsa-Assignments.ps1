@@ -271,17 +271,16 @@ Function New-AssignmentMap
 
     $Random = [System.Random]::new()
     $Students | ForEach-Object {
-        $s = $_
-        $i = $Random.Next(0, $Projects.Count)
-        $p = $Projects[$i]
-        Write-Verbose "Assigned '$($s.Name)' to '$($p.FullName)'"
         [PSCustomObject]@{
-            Student = $s
-            Project = $p
+            Student = $_
+            Rank = $Random.Next()
         }
-        $Projects = @($Projects | Where-Object {
-            $_.Id -ne $p.Id
-        })
+    } | Sort-Object "Rank" | ForEach-Object { $i = 0 } {
+        [PSCustomObject]@{
+            Student = $_.Student
+            Project = $Projects[$i]
+        }
+        $i++
     }
 }
 
